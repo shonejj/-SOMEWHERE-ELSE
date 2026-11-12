@@ -63,9 +63,9 @@ Requires Node 20.19+ (CI uses Node 22).
 
 ## Deployment (GitHub Pages)
 
-`.github/workflows/deploy.yml` builds the site on every push to `main` (and `claude/**` branches) and publishes `dist/` with the official GitHub Pages actions. The build uses relative paths (`base: './'`), so it works at `https://<user>.github.io/<repo>/` or any static host.
+`.github/workflows/deploy.yml` runs on every push to `main` (and `claude/**` branches): it installs dependencies, verifies every dependency licence, builds the site, and force-pushes `dist/` to the **`gh-pages`** branch. The build uses relative paths (`base: './'`), so it works at `https://<user>.github.io/<repo>/` or on any static host.
 
-If the first run stops at *configure-pages* or *deploy* with a "Pages not enabled" / environment-protection error, open **Settings → Pages**, set **Source: GitHub Actions**, then re-run the workflow (Actions → Deploy to GitHub Pages → *Run workflow*). If you deploy from a non-default branch, allow that branch under **Settings → Environments → github-pages**.
+If the site is not live after the first run, open **Settings → Pages**, choose **Deploy from a branch → `gh-pages` / `(root)`**, and save. Every later push redeploys automatically.
 
 ## Graphics & performance
 

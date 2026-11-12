@@ -19,7 +19,7 @@ _Last verified: 2026-11-12 against the exact versions pinned in `package-lock.js
 |---|---|---|
 | vite (and its transitive deps) | 8.3.8 | MIT (all transitive deps checked by `npm run licenses`) |
 
-GitHub Actions used for deployment (`actions/checkout`, `actions/setup-node`, `actions/configure-pages`, `actions/upload-pages-artifact`, `actions/deploy-pages`) are published by GitHub under the MIT licence.
+GitHub Actions used for deployment (`actions/checkout`, `actions/setup-node`) are published by GitHub under the MIT licence; publishing itself is a plain `git push`.
 
 ## 3. Art, audio and music
 
