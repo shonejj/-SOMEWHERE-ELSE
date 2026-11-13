@@ -110,6 +110,33 @@ export function logWood(size) {
   }, 4.0);
 }
 
+export function skin(size) {
+  // pores, fine creases and subtle colour variation
+  return generate(size, (u, v, o) => {
+    const n = fbm2(u * 8, v * 8, 4, 8, 8);
+    const pores = worley2(u * 90, v * 90, 90)[0];
+    const crease = Math.abs(noise2(u * 6, v * 40, 6, 40));
+    const k = 0.94 + n * 0.08;
+    o.r = 0.86 * k; o.g = 0.66 * k - n * 0.02; o.b = 0.56 * k;
+    o.h = 0.5 + n * 0.08 - smoothstep(0.12, 0.0, pores) * 0.18 - smoothstep(0.05, 0.0, crease) * 0.12;
+  }, 1.6);
+}
+
+export function knit(size, base = [0.2, 0.27, 0.22]) {
+  // stockinette "V" stitches
+  return generate(size, (u, v, o) => {
+    const cols = 24, rows = 32;
+    const cx = u * cols, cy = v * rows;
+    const fx = cx - Math.floor(cx), fy = cy - Math.floor(cy);
+    const side = fx < 0.5 ? fx * 2 : (1 - fx) * 2;
+    const loop = Math.sin(Math.min(1, Math.max(0, (side * 1.1 + (fx < 0.5 ? fy : 1 - fy) * 0.5) )) * Math.PI);
+    const n = fbm2(u * 30, v * 30, 2, 30, 30);
+    const k = 0.62 + loop * 0.4 + n * 0.08;
+    o.r = base[0] * k; o.g = base[1] * k; o.b = base[2] * k;
+    o.h = loop * 0.8 + n * 0.1;
+  }, 3.0);
+}
+
 export function woodGrain(size, base = [0.55, 0.38, 0.24]) {
   // continuous furniture-grade grain running along v
   return generate(size, (u, v, o) => {
@@ -409,6 +436,8 @@ export async function buildTextures(quality, onProgress) {
     ['boards', () => planks(half, [0.42, 0.3, 0.2], 8)],
     ['deck', () => planks(half, [0.46, 0.42, 0.37], 5)],
     ['grain', () => woodGrain(half)],
+    ['skin', () => skin(256)],
+    ['knit', () => knit(256)],
     ['logs', () => logWood(S)],
     ['bark', () => bark(half)],
     ['birch', () => bark(half, true)],

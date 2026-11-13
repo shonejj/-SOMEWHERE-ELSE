@@ -22,13 +22,19 @@ There are no quests, no enemies, no scores, no timers and no objectives. Just a 
 | **Tree house** | Climb the **ladder** · sit or lie down inside · **string lights** · a **telescope** pointed at the lake (zoom view) |
 | **Forest clearing** | Light the **campfire** · sit on log benches · crawl into the **tent** to rest |
 
+**You**
+
+- **First-person hands** with jointed fingers, skin and knitted sleeves. They stay out of the way until you look at something usable, then reach out: a pointing finger for switches, lamps and the radio, an open palm to push doors, windows and drawers, a grip to pick things up. Carried objects sit in your hand, and when you inspect something both hands come up to turn it over.
+- Aiming is forgiving: small objects (a mug, a pine cone) are picked up when they're near the crosshair, not only when it's exactly on them, with a wider margin on touch screens.
+
 **The world**
 
 - Day/night cycle (one day ≈ one hour) with a procedural sky: sun, moon, stars, Milky Way, moving clouds.
 - Dynamic weather that drifts between clear, overcast, rain, storm (lightning + delayed thunder) and fog — or lock it in the menu.
 - Rain streaks that stop under the roofs, ground splashes, ripples on the lake, wet darkening ground and roofs.
-- Wind-driven foliage (pines, birch, grass, ferns, wildflowers) and curtains that billow when a window is open.
-- Wildlife: deer (graze, look up, bolt if you rush them — crouch to get closer), a flock of birds, ducks, jumping fish, fireflies on dry nights, bird song, owls, crickets and frogs.
+- Lush, wind-driven nature: a dense GPU grass field that surrounds you wherever you walk, pines, birch and broadleaf oaks, bushes along the forest edges, ferns, thousands of wildflowers, reeds and cattails at the water's edge, lily pads (some flowering), mushrooms at the feet of trees, fallen mossy logs and stumps, moss on the tops of rocks, and leaves drifting on the wind.
+- Curtains billow when a window is open.
+- Wildlife: deer (graze, look up, bolt if you rush them — crouch to get closer), a flock of birds, butterflies over the meadow, dragonflies darting along the shore, ducks, jumping fish, fireflies on dry nights, bird song, owls, crickets and frogs.
 - Fully positional, procedurally synthesised sound. Indoors the rain becomes a muffled drum on the roof — opening windows and doors lets it back in.
 - Physics: everything loose can be picked up, inspected (rotate it in your hands), dropped or thrown; it collides, tumbles, clatters and splashes with material-specific sounds.
 
@@ -47,7 +53,7 @@ There are no quests, no enemies, no scores, no timers and no objectives. Just a 
 | `F` | torch |
 | `Esc` | pause · settings · places |
 
-**Touch:** drag on the left half to walk, drag on the right half to look, **tap** anything to use it. On-screen buttons: Use, Jump, Crouch, Run, Torch, and Throw / Inspect / Drop while holding something. ☰ opens the menu.
+**Touch** (phones and tablets, detected automatically; also enabled the first time you touch the screen on a touch laptop): drag on the left half to walk, drag on the right half to look, **tap** anything to use it. On-screen buttons: Use, Jump, Crouch, Run, Torch, and Throw / Inspect / Drop while holding something. ☰ opens the menu.
 
 ## Running locally
 
@@ -69,7 +75,7 @@ If the site is not live after the first run, open **Settings → Pages**, choose
 
 ## Graphics & performance
 
-The pause menu offers **Low / Medium / High / Ultra** (phones default to Low, desktops to High). Presets scale render resolution, shadow-map size, texture resolution, vegetation density, rain particle count, terrain resolution and planar lake reflections (High/Ultra). On top of that a **dynamic-resolution** controller lowers or raises the render scale every two seconds to hold a smooth frame rate. Static geometry is merged into a few draw calls per material, vegetation is instanced in spatial chunks so frustum culling works, and the world code is lazily loaded (and pre-fetched while you read the landing page).
+The pause menu offers **Low / Medium / High / Ultra** (phones default to Low, desktops to High). Presets scale render resolution, grass density and radius, bloom (High/Ultra), shadow-map size, texture resolution, vegetation density, rain particle count, terrain resolution and planar lake reflections (High/Ultra). On top of that a **dynamic-resolution** controller lowers or raises the render scale every two seconds to hold a smooth frame rate. Static geometry is merged into a few draw calls per material, vegetation is instanced in spatial chunks so frustum culling works, and the world code is lazily loaded (and pre-fetched while you read the landing page).
 
 ## Architecture
 

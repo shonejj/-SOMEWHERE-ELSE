@@ -23,22 +23,31 @@ export class Input {
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => { this.keys.clear(); this.mouse.left = this.mouse.right = false; });
-    dom.addEventListener('mousedown', (e) => {
-      if (this.touch) return;
+    this.lastTouch = 0;
+    const surface = dom.parentElement || dom;
+    surface.addEventListener('mousedown', (e) => {
+      if (performance.now() - this.lastTouch < 800) return; // synthetic mouse event after a touch
+      if (e.target.closest && e.target.closest('button, select, input, #menu')) return;
       if (!this.locked) { this.requestLock(); return; }
       if (e.button === 0) { this.mouse.left = true; this.pressed.add('Mouse0'); }
       if (e.button === 2) { this.mouse.right = true; this.pressed.add('Mouse2'); }
     });
     addEventListener('mouseup', (e) => { if (e.button === 0) this.mouse.left = false; if (e.button === 2) this.mouse.right = false; });
-    dom.addEventListener('contextmenu', (e) => e.preventDefault());
+    surface.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('mousemove', (e) => { if (this.locked) { this.look.x += e.movementX; this.look.y += e.movementY; } });
-    dom.addEventListener('wheel', (e) => { this.wheel += Math.sign(e.deltaY); }, { passive: true });
+    surface.addEventListener('wheel', (e) => { this.wheel += Math.sign(e.deltaY); }, { passive: true });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === dom;
       if (!this.locked) { this.keys.clear(); this.onUnlock?.(); }
     });
 
     if (this.touch) this.setupTouch();
+    else {
+      // hybrid devices (touch laptops, desktop-mode mobile browsers): enable on first touch
+      const first = () => { removeEventListener('touchstart', first, true); if (!this.touch) { this.touch = true; this.exitLock(); this.setupTouch(); this.onTouchMode?.(); } };
+      addEventListener('touchstart', first, true);
+    }
+    addEventListener('touchstart', () => (this.lastTouch = performance.now()), { capture: true, passive: true });
   }
 
   requestLock() {
@@ -61,7 +70,7 @@ export class Input {
           knob.style.transform = 'translate(-50%,-50%)';
         } else if (!this.lookTouch) this.lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY, t0: performance.now(), moved: 0 };
       }
-      e.preventDefault();
+      if (e.cancelable) e.preventDefault();
     }, { passive: false });
     layer.addEventListener('touchmove', (e) => {
       for (const t of e.changedTouches) {
@@ -77,7 +86,7 @@ export class Input {
           this.lookTouch.x = t.clientX; this.lookTouch.y = t.clientY;
         }
       }
-      e.preventDefault();
+      if (e.cancelable) e.preventDefault();
     }, { passive: false });
     const end = (e) => {
       for (const t of e.changedTouches) {

@@ -10,6 +10,7 @@ export class Interaction {
     this.targets = []; this.occluders = []; this.updaters = [];
     this.ray = new THREE.Raycaster(); this.ray.far = 2.7;
     this.held = null; this.focus = null;
+    this.coneAngle = 0.11;
     this.holdQ = new THREE.Quaternion();
   }
 
@@ -32,6 +33,29 @@ export class Interaction {
     this.camera.getWorldDirection(fwd);
     this.ray.set(this.camera.position, fwd);
     const hits = this.ray.intersectObjects(this.held ? this.occluders : this.targets.concat(this.occluders), true);
+    const direct = this.resolveHits(hits);
+    if (direct || this.held) return direct;
+    // forgiving aim: the nearest small object inside a narrow cone, if nothing blocks the view of it
+    const block = hits.length ? hits[0].distance : Infinity;
+    let best = null, bestA = this.coneAngle;
+    for (const it of this.physics.items) {
+      if (it.held) continue;
+      tmp.copy(it.mesh.position).sub(this.camera.position);
+      const d = tmp.length();
+      if (d > this.ray.far || d > block + 0.15 || d < 0.05) continue;
+      const a = Math.acos(Math.min(1, tmp.dot(fwd) / d));
+      if (a < bestA) { bestA = a; best = it; }
+    }
+    if (!best) return null;
+    tmp.copy(best.mesh.position).sub(this.camera.position);
+    const d = tmp.length();
+    this.ray.set(this.camera.position, tmp.normalize());
+    const occ = this.ray.intersectObjects(this.occluders, true)[0];
+    if (occ && occ.distance < d - 0.1) return null;
+    return { kind: 'item', obj: best.mesh, item: best, point: best.mesh.position.clone() };
+  }
+
+  resolveHits(hits) {
     for (const h of hits) {
       let o = h.object;
       if (this.held && o === this.held.mesh) continue;
@@ -113,13 +137,22 @@ export class Interaction {
     const f = this.pick();
     this.focus = f;
     if (!f) { this.ui.hint(null); return; }
+    const busy = this.hands?.reachState;
     if (f.kind === 'item') {
       this.ui.hint('Pick up ' + f.item.name);
-      if (use) this.grab(f.item);
+      if (use && !busy) {
+        if (this.hands) this.hands.reach(f.item.mesh.position, 'grab', () => this.grab(f.item));
+        else this.grab(f.item);
+      }
     } else {
       const label = typeof f.spec.label === 'function' ? f.spec.label() : f.spec.label;
       this.ui.hint(label);
-      if (use) f.spec.use(f);
+      if (use && !busy) {
+        const kind = /sit|lie|look through|crawl|step back|it's/i.test(label) ? null
+          : /door|window|drawer|cupboard|wardrobe|chest/i.test(label) ? 'push' : 'press';
+        if (kind && this.hands) this.hands.reach(f.point, kind, () => f.spec.use(f));
+        else f.spec.use(f);
+      }
     }
   }
 }

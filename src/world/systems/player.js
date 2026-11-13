@@ -176,7 +176,11 @@ export class Player {
   }
 
   applyFov(dt, sprint) {
-    const target = this.settings.fov / this.zoom + (sprint ? 4 : 0);
+    // fov setting is the horizontal-ish view on landscape screens; widen vertically on tall (portrait) screens
+    let base = this.settings.fov;
+    const asp = this.camera.aspect;
+    if (asp < 1.3) { const h = THREE.MathUtils.degToRad(base * 1.25); base = Math.min(105, THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(h / 2) / asp))); }
+    const target = base / this.zoom + (sprint ? 4 : 0);
     if (Math.abs(this.camera.fov - target) > 0.01) {
       this.camera.fov += (target - this.camera.fov) * Math.min(1, dt * 6);
       this.camera.updateProjectionMatrix();

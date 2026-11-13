@@ -8,6 +8,11 @@ import { SkySystem } from './env/sky.js';
 import { Weather } from './env/weather.js';
 import { Lake } from './env/water.js';
 import { Vegetation } from './env/vegetation.js';
+import { GrassField } from './env/grassfield.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { makeMaterials } from './build/kit.js';
 import { buildCabin } from './build/cabin.js';
 import { buildOutdoor } from './build/outdoor.js';
@@ -19,6 +24,7 @@ import { Interaction } from './systems/interaction.js';
 import { Wildlife } from './systems/wildlife.js';
 import { Radio } from './systems/radio.js';
 import { UI } from './systems/ui.js';
+import { Hands } from './systems/hands.js';
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 
@@ -38,7 +44,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   renderer.shadowMap.enabled = preset.shadows;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.domElement.id = 'world-canvas';
-  container.appendChild(renderer.domElement);
+  container.insertBefore(renderer.domElement, container.firstChild); // UI overlays must stay above the canvas
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(settings.fov, innerWidth / innerHeight, 0.05, 2000);
@@ -69,11 +75,20 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   const lake = new Lake(scene, preset, T);
   progress(0.62, 'Growing the forest'); await nextFrame();
   const veg = new Vegetation(scene, preset, T, terrain, colliders);
+  const grass = new GrassField(scene, preset, terrain);
+  if (lake.reflective) {
+    // keep the lake's mirror pass cheap: skip the dense grass while it renders
+    const orig = lake.mesh.onBeforeRender;
+    lake.mesh.onBeforeRender = function (...args) { grass.mesh.visible = false; orig.apply(this, args); grass.mesh.visible = true; };
+  }
 
   const ui = new UI(settings, {});
   const input = new Input(renderer.domElement, ui);
   const player = new Player(camera, input, terrain, colliders, audio, settings);
   const ix = new Interaction({ camera, input, physics, audio, player, ui });
+  const hands = new Hands(camera, T);
+  ix.hands = hands;
+  if (input.touch) ix.coneAngle = 0.16;
   const clock = { hour: settings.startHour };
   const updaters = [];
   const ctx = {
@@ -95,6 +110,17 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   player.teleport(-1.6, undefined, 11.5, 0.05);
   player.pitch = 0.02;
 
+  // gentle bloom on lamps, fire and sun glints (High / Ultra)
+  let composer = null;
+  if (preset.key === 'high' || preset.key === 'ultra') {
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.55, 0.88));
+    composer.addPass(new OutputPass());
+  }
+  const draw = () => (composer ? composer.render() : renderer.render(scene, camera));
+  const resize = () => { renderer.setSize(innerWidth, innerHeight); if (composer) { composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(innerWidth, innerHeight); } };
+
   progress(0.88, 'Warming shaders'); await nextFrame();
   sky.update(0.016, clock.hour, weather.w, camera.position, 0);
   try { await renderer.compileAsync(scene, camera); } catch (e) { renderer.compile(scene, camera); }
@@ -107,7 +133,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     if (audio) { if (p) audio.master.gain.setTargetAtTime(settings.volume * 0.35, audio.now, 0.2); else audio.setVolume(settings.volume); }
   };
   Object.assign(ui.h, {
-    resume: () => { setPaused(false); input.requestLock(); },
+    resume: () => { setPaused(false); if (!input.touch) input.requestLock(); },
     exit: () => { running = false; input.exitLock(); onExit?.(); },
     quality: (q) => { settings.quality = q; saveSettings(settings); try { sessionStorage.setItem('se-autoenter', '1'); } catch (e) {} location.reload(); },
     changed: (key) => {
@@ -125,18 +151,18 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
       if (id === 'treehouse') player.teleport(p.pos[0], terrain.heightAt(p.pos[0], p.pos[2]) + 4.6, p.pos[2], p.yaw);
       else if (['living', 'bedroom', 'porch'].includes(id)) player.teleport(p.pos[0], FLOOR, p.pos[2], p.yaw);
       else player.teleport(p.pos[0], undefined, p.pos[2], p.yaw);
-      setPaused(false); input.requestLock();
+      setPaused(false); if (!input.touch) input.requestLock();
       await ui.fade(false, 700);
     },
   });
-  input.onUnlock = () => { if (running && !isTouch) setPaused(true); };
-  if (isTouch) document.getElementById('tb-menu').addEventListener('touchend', () => setPaused(!paused));
+  input.onUnlock = () => { if (running && !input.touch) setPaused(true); };
+  input.onTouchMode = () => { ui.setTouch(true); ix.coneAngle = 0.16; };
 
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
+    resize();
   });
-  document.addEventListener('visibilitychange', () => { if (document.hidden && !isTouch) setPaused(true); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true); });
 
   // ----------------------------------------------------------- loop --
   let last = performance.now(), elapsed = 0, frameAcc = 0, frames = 0, envFrame = 0;
@@ -154,7 +180,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     if (!running) return;
     const now = performance.now();
     let dt = Math.min(0.1, (now - last) / 1000); last = now;
-    if (paused) { renderer.render(scene, camera); return; }
+    if (paused) { draw(); input.endFrame(); return; }
     elapsed += dt;
 
     // time of day
@@ -166,8 +192,9 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     input.look.x = input.look.x; // (accumulated by events)
     player.update(dt);
     if (input.hit('KeyF')) player.toggleFlashlight();
-    if (input.hit('Escape') && isTouch) setPaused(true);
+    if (input.hit('Escape') && input.touch) { input.endFrame(); setPaused(true); return; }
     ix.update(dt);
+    hands.update(dt, { held: ix.held, inspecting: ix.held && (input.down('KeyR') || input.mouse.right), hover: !!ix.focus, mode: player.mode, bob: player.bob });
     physics.step(dt);
     for (const it of physics.items) {
       if (it.held) continue;
@@ -216,7 +243,8 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
       });
     }
 
-    renderer.render(scene, camera);
+    grass.update(camera);
+    draw();
     input.endFrame();
 
     // dynamic resolution keeps things smooth
@@ -226,11 +254,10 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
       let ns = resScale;
       if (avg > 1 / 42 && resScale > 0.55) ns = resScale - 0.1;
       else if (avg < 1 / 58 && resScale < preset.pixelRatio) ns = Math.min(preset.pixelRatio, resScale + 0.05);
-      if (ns !== resScale) { resScale = ns; renderer.setPixelRatio(baseDPR * resScale); renderer.setSize(innerWidth, innerHeight); }
+      if (ns !== resScale) { resScale = ns; renderer.setPixelRatio(baseDPR * resScale); resize(); }
     }
   };
   renderer.setAnimationLoop(frame);
-  if (!isTouch) input.requestLock();
 
   // debugging / automated testing hook
   window.__SE = { scene, camera, player, renderer, weather, clock, sky, ix, physics, cabin, settings, colliders, terrain, setPaused, travel: ui.h.travel };

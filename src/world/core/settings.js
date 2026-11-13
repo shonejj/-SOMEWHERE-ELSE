@@ -1,11 +1,15 @@
 // Persistent user settings + quality presets.
-export const isTouch = typeof window !== 'undefined' && (('ontouchstart' in window) || navigator.maxTouchPoints > 0) && matchMedia('(pointer: coarse)').matches;
+const hasTouch = typeof window !== 'undefined' && (('ontouchstart' in window) || navigator.maxTouchPoints > 0);
+const mobileUA = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(navigator.userAgent);
+// iPadOS reports itself as a Mac with touch points
+const iPadOS = typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+export const isTouch = hasTouch && (mobileUA || iPadOS || matchMedia('(pointer: coarse)').matches || !matchMedia('(pointer: fine)').matches);
 
 export const PRESETS = {
-  low:    { name: 'Low',    pixelRatio: 0.75, maxPixelRatio: 1,    shadows: false, shadowSize: 512,  textureSize: 512,  trees: 380,  grass: 2600,  ferns: 250, waterReflections: 0,    rain: 3000,  terrainSeg: 160, antialias: false },
-  medium: { name: 'Medium', pixelRatio: 1,    maxPixelRatio: 1.25, shadows: true,  shadowSize: 1024, textureSize: 512,  trees: 650,  grass: 6000,  ferns: 500, waterReflections: 0,    rain: 6000,  terrainSeg: 220, antialias: false },
-  high:   { name: 'High',   pixelRatio: 1,    maxPixelRatio: 1.5,  shadows: true,  shadowSize: 2048, textureSize: 1024, trees: 1000, grass: 11000, ferns: 800, waterReflections: 512,  rain: 10000, terrainSeg: 300, antialias: true },
-  ultra:  { name: 'Ultra',  pixelRatio: 1,    maxPixelRatio: 2,    shadows: true,  shadowSize: 4096, textureSize: 1024, trees: 1400, grass: 18000, ferns: 1100, waterReflections: 1024, rain: 14000, terrainSeg: 360, antialias: true },
+  low:    { key: 'low', name: 'Low',    pixelRatio: 0.75, maxPixelRatio: 1,    shadows: false, shadowSize: 512,  textureSize: 512,  trees: 380,  grass: 2600,  ferns: 250, waterReflections: 0,    rain: 3000,  terrainSeg: 160, antialias: false },
+  medium: { key: 'medium', name: 'Medium', pixelRatio: 1,    maxPixelRatio: 1.25, shadows: true,  shadowSize: 1024, textureSize: 512,  trees: 650,  grass: 6000,  ferns: 500, waterReflections: 0,    rain: 6000,  terrainSeg: 220, antialias: false },
+  high:   { key: 'high', name: 'High',   pixelRatio: 1,    maxPixelRatio: 1.5,  shadows: true,  shadowSize: 2048, textureSize: 1024, trees: 1000, grass: 11000, ferns: 800, waterReflections: 512,  rain: 10000, terrainSeg: 300, antialias: true },
+  ultra:  { key: 'ultra', name: 'Ultra',  pixelRatio: 1,    maxPixelRatio: 2,    shadows: true,  shadowSize: 4096, textureSize: 1024, trees: 1400, grass: 18000, ferns: 1100, waterReflections: 1024, rain: 14000, terrainSeg: 360, antialias: true },
 };
 
 const KEY = 'somewhere-else-settings-v1';

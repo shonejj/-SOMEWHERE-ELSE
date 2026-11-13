@@ -11,8 +11,7 @@ export class UI {
     this.toastEl = $('toast');
     this.menu = $('menu');
     this.lastHint = null;
-    this.hintKey.textContent = isTouch ? 'Tap' : 'E';
-    document.body.classList.toggle('touch', isTouch);
+    this.setTouch(isTouch);
 
     // menu controls
     const q = $('opt-quality');
@@ -39,7 +38,13 @@ export class UI {
     const places = $('places');
     places.innerHTML = PLACES.map((p) => `<button class="place" data-id="${p.id}">${p.name}</button>`).join('');
     places.onclick = (e) => { const b = e.target.closest('.place'); if (b) handlers.travel(b.dataset.id); };
-    $('controls-help').innerHTML = isTouch
+  }
+
+  setTouch(on) {
+    this.touch = on;
+    this.hintKey.textContent = on ? 'Tap' : 'E';
+    document.body.classList.toggle('touch', on);
+    $('controls-help').innerHTML = on
       ? '<b>Left side</b> move · <b>Right side</b> look · <b>Tap</b> to use or pick up · buttons for jump, crouch, run and torch'
       : '<b>WASD</b> walk · <b>Shift</b> run · <b>C / Ctrl</b> crouch · <b>Space</b> jump · <b>E</b> use / pick up · <b>Click</b> throw · <b>Hold R / right-click</b> inspect · <b>Q</b> drop · <b>F</b> torch · <b>Esc</b> menu';
   }

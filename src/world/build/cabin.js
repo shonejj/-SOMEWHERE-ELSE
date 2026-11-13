@@ -164,7 +164,8 @@ export function buildCabin(ctx) {
     const g = new THREE.Group(); g.position.set(-5.0, F, -2.2); root.add(g);
     mesh(new THREE.CylinderGeometry(0.32, 0.28, 0.35, 16, 1, true), M.wool, 0, 0.18, 0, g).material = new THREE.MeshStandardMaterial({ color: 0x6b5236, roughness: 1, side: THREE.DoubleSide });
     mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.02, 16), M.trim, 0, 0.01, 0, g);
-    for (let i = 0; i < 6; i++) { const l = mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.5, 7), fire.logMat, (i % 3 - 1) * 0.12, 0.1 + Math.floor(i / 3) * 0.1, 0, g); l.rotation.z = Math.PI / 2; l.rotation.y = 0.3 * (i - 2); }
+    const basketLogMat = new THREE.MeshStandardMaterial({ map: T.bark.map, normalMap: T.bark.normalMap, roughness: 1 });
+    for (let i = 0; i < 6; i++) { const l = mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.5, 7), basketLogMat, (i % 3 - 1) * 0.12, 0.1 + Math.floor(i / 3) * 0.1, 0, g); l.rotation.z = Math.PI / 2; l.rotation.y = 0.3 * (i - 2); }
     solid(-5.33, F, -2.53, -4.67, F + 0.4, -1.87, { walk: false });
     const loose = mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.42, 8), new THREE.MeshStandardMaterial({ map: T.bark.map, normalMap: T.bark.normalMap, roughness: 1 }), -4.55, F + 0.06, -1.7, root);
     loose.rotation.z = Math.PI / 2; loose.rotation.y = 0.5;
@@ -457,7 +458,7 @@ export function buildCabin(ctx) {
     mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.3, 14), new THREE.MeshStandardMaterial({ color: 0x5a6a52, roughness: 0.6 }), -1.1, F + 0.25, -3.0, root);
     // open shelf + crockery
     addBox(1.2, 0.04, 0.26, M.oak, -1.85, F + 1.62, -3.21, 1);
-    for (let i = 0; i < 4; i++) { const p = mesh(new THREE.CylinderGeometry(0.11, 0.08, 0.02, 20), M.ceramic, -2.25 + i * 0.03, F + 1.76, -3.27, root); p.rotation.x = Math.PI / 2 - 0.15; }
+    for (let i = 0; i < 4; i++) { const p = mesh(new THREE.CylinderGeometry(0.11, 0.08, 0.02, 20), M.ceramic, -2.3 + i * 0.035, F + 1.75, -3.25, root); p.rotation.z = Math.PI / 2 - 0.12; }
     for (let i = 0; i < 3; i++) mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.15, 14), new THREE.MeshPhysicalMaterial({ color: 0xc0d0c8, roughness: 0.08, transparent: true, opacity: 0.5 }), -1.8 + i * 0.16, F + 1.715, -3.2, root);
     // objects on the counter
     const k = kettle(M); k.position.set(-1.9, F + h, -3.0); root.add(k);

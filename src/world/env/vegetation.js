@@ -2,10 +2,22 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32, fbm2, smoothstep } from '../core/noise.js';
-import { WATER_LEVEL, CABIN, TREEHOUSE, CLEARING, DOCK, WORLD_RADIUS } from '../core/layout.js';
+import { WATER_LEVEL, CABIN, TREEHOUSE, CLEARING, DOCK, WORLD_RADIUS, LAKE } from '../core/layout.js';
 import { pathDistance, forestDensity, lakeE } from './terrain.js';
 
 export const windUniforms = { uTime: { value: 0 }, uWind: { value: 0.4 } };
+
+/** Moss on upward-facing surfaces (rocks, fallen logs). */
+export function addMoss(material, amount) {
+  material.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'varying vec3 vWN;\n' + sh.vertexShader.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvWN = normalize(mat3(modelMatrix) * objectNormal);');
+    sh.fragmentShader = 'varying vec3 vWN;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      float mossN = fract(sin(dot(floor(vMapUv * 40.0), vec2(12.9898, 78.233))) * 43758.5453);
+      float moss = smoothstep(0.35, 0.8, vWN.y + (mossN - 0.5) * 0.25) * ${amount.toFixed(2)};
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.22, 0.07) * (0.8 + mossN * 0.4), moss);`);
+  };
+  material.customProgramCacheKey = () => 'moss' + amount;
+}
 
 /** Injects a wind sway into a standard material. Works with instancing. */
 export function addWind(material, strength, heightScale, key) {
@@ -97,6 +109,83 @@ function birchGeometry(seed) {
   const foliage = mergeGeometries(parts);
   sphericalNormals(foliage, new THREE.Vector3(0, 0.65, 0), 0.4);
   return { trunk, foliage };
+}
+
+function oakGeometry(seed) {
+  const r = mulberry32(seed);
+  const parts = [];
+  const trunk = new THREE.CylinderGeometry(0.028, 0.05, 0.5, 9, 4);
+  const tp = trunk.attributes.position;
+  for (let i = 0; i < tp.count; i++) { const y = tp.getY(i) + 0.25; const a = Math.atan2(tp.getZ(i), tp.getX(i)); const k = 1 + Math.sin(a * 5 + y * 9) * 0.08 + Math.max(0, 0.08 - y) * 4; tp.setX(i, tp.getX(i) * k); tp.setZ(i, tp.getZ(i) * k); }
+  trunk.translate(0, 0.25, 0);
+  parts.push(trunk.toNonIndexed());
+  const lobes = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + r() * 0.6, up = 0.55 + r() * 0.45, len = 0.22 + r() * 0.12;
+    const dir = new THREE.Vector3(Math.cos(a) * 0.8, up, Math.sin(a) * 0.8).normalize();
+    const b = new THREE.CylinderGeometry(0.008, 0.02, len, 6);
+    b.translate(0, len / 2, 0);
+    b.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+    b.translate(0, 0.42, 0);
+    parts.push(b.toNonIndexed());
+    lobes.push(new THREE.Vector3(0, 0.42, 0).addScaledVector(dir, len));
+  }
+  lobes.push(new THREE.Vector3(0, 0.82, 0));
+  const trunkGeo = mergeGeometries(parts);
+  const cards = [];
+  for (const c of lobes) {
+    const R0 = 0.16 + r() * 0.06;
+    for (let i = 0; i < 26; i++) {
+      const u = r() * 2 - 1, a = r() * Math.PI * 2, rad = Math.cbrt(r()) * R0;
+      const p = new THREE.Vector3(Math.sqrt(1 - u * u) * Math.cos(a), u * 0.75, Math.sqrt(1 - u * u) * Math.sin(a)).multiplyScalar(rad).add(c);
+      const s = 0.13 + r() * 0.06;
+      const q = new THREE.PlaneGeometry(s, s);
+      q.rotateX(-0.7 + r() * 1.4); q.rotateY(r() * Math.PI);
+      q.translate(p.x, p.y, p.z);
+      cards.push(q);
+    }
+  }
+  const foliage = mergeGeometries(cards);
+  sphericalNormals(foliage, new THREE.Vector3(0, 0.6, 0), 0.5);
+  return { trunk: trunkGeo, foliage };
+}
+
+function bushGeometry(seed) {
+  const r = mulberry32(seed);
+  const cards = [];
+  for (let i = 0; i < 34; i++) {
+    const a = r() * Math.PI * 2, u = r(), rad = Math.sqrt(r()) * 0.5;
+    const s = 0.32 + r() * 0.18;
+    const q = new THREE.PlaneGeometry(s, s);
+    q.rotateX(-0.9 + r() * 1.8); q.rotateY(r() * Math.PI);
+    q.translate(Math.cos(a) * rad, 0.15 + u * 0.55 * (1 - rad), Math.sin(a) * rad);
+    cards.push(q);
+  }
+  const g = mergeGeometries(cards);
+  sphericalNormals(g, new THREE.Vector3(0, 0.1, 0), 0.6);
+  return g;
+}
+
+function reedClump(r) {
+  const pos = [], col = [], idx = []; let v0 = 0;
+  for (let b = 0; b < 14; b++) {
+    const a = r() * 6.28, d = r() * 0.25, bx = Math.cos(a) * d, bz = Math.sin(a) * d;
+    const h = 0.9 + r() * 0.9, w = 0.012, ry = r() * Math.PI, cx = Math.cos(ry), sz = Math.sin(ry), lean = (r() - 0.5) * 0.3;
+    for (let s2 = 0; s2 <= 3; s2++) {
+      const t = s2 / 3, ww = w * (1 - t * 0.7), o = lean * t * t * h;
+      for (const side of [-1, 1]) { pos.push(bx + cx * ww * side + o, t * h, bz + sz * ww * side); const g = 0.5 + t * 0.4; col.push(0.25 * g, 0.36 * g, 0.12 * g); }
+    }
+    for (let s2 = 0; s2 < 3; s2++) { const a0 = v0 + s2 * 2; idx.push(a0, a0 + 1, a0 + 2, a0 + 1, a0 + 3, a0 + 2); }
+    v0 += 8;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  // cattail heads
+  const heads = [];
+  for (let i = 0; i < 4; i++) { const c = new THREE.CapsuleGeometry(0.018, 0.12, 3, 6); const hy = 1.1 + r() * 0.5; c.translate((r() - 0.5) * 0.3, hy, (r() - 0.5) * 0.3); heads.push(c.toNonIndexed()); }
+  return { leaves: g, heads: mergeGeometries(heads) };
 }
 
 function grassClump(r, blades = 8) {
@@ -200,7 +289,17 @@ export class Vegetation {
 
     const pines = [0, 1, 2].map((i) => pineGeometry(100 + i * 17));
     const birches = [0, 1].map((i) => birchGeometry(300 + i * 13));
-    const pineMs = pines.map(() => []), birchMs = birches.map(() => []);
+    const oaks = [0, 1].map((i) => oakGeometry(500 + i * 29));
+    const pineMs = pines.map(() => []), birchMs = birches.map(() => []), oakMs = oaks.map(() => []);
+    const oakLeafMat = new THREE.MeshStandardMaterial({ map: textures.leaves, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.8, color: 0x9fb07a });
+    addWind(oakLeafMat, 0.05, 1.0, 'oak');
+    const oakBark = new THREE.MeshStandardMaterial({ map: textures.bark.map, normalMap: textures.bark.normalMap, roughness: 0.95, color: 0x9a8c80 });
+    // a few characterful broadleaf trees near the cabin meadow
+    for (const [ox, oz, sc] of [[15, 9, 15], [-17, 13, 13], [24, -6, 16], [-12, -14, 14], [30, 30, 17]]) {
+      const y = h(ox, oz) - 0.1;
+      oakMs[(ox > 0) | 0].push(make(ox, y, oz, sc, ox * 0.37, 0.02));
+      this.trees_pending = (this.trees_pending || []).concat([[ox, oz, sc * 0.045, y, sc]]);
+    }
     this.trees = [];
     const target = quality.trees;
     let tries = 0, placed = 0;
@@ -217,12 +316,14 @@ export class Vegetation {
       if (r < 120) { let ok = true; for (const t of this.trees) { if ((t.x - x) ** 2 + (t.z - z) ** 2 < 9) { ok = false; break; } } if (!ok) continue; }
       const y = h(x, z) - 0.15;
       const nearLake = lakeE(x, z) < 1.6;
-      const isBirch = (nearLake ? rnd() < 0.5 : rnd() < 0.13) && r < WORLD_RADIUS;
-      const sc = isBirch ? 9 + rnd() * 6 : 11 + rnd() * 13;
+      const isBirch = (nearLake ? rnd() < 0.45 : rnd() < 0.12) && r < WORLD_RADIUS;
+      const isOak = !isBirch && fd < 0.75 && r < WORLD_RADIUS && rnd() < 0.18;
+      const sc = isBirch ? 9 + rnd() * 6 : isOak ? 10 + rnd() * 7 : 11 + rnd() * 13;
       const mtx = make(x, y, z, sc, rnd() * Math.PI * 2, 0.06);
       if (isBirch) birchMs[Math.floor(rnd() * birches.length)].push(mtx);
+      else if (isOak) oakMs[Math.floor(rnd() * oaks.length)].push(mtx);
       else pineMs[Math.floor(rnd() * pines.length)].push(mtx);
-      const rad = sc * (isBirch ? 0.022 : 0.03);
+      const rad = sc * (isBirch ? 0.022 : isOak ? 0.045 : 0.03);
       this.trees.push({ x, z, r: rad, birch: isBirch });
       if (r < WORLD_RADIUS + 5) colliders.addCylinder(x, z, Math.max(0.18, rad), y, y + sc);
       placed++;
@@ -232,8 +333,12 @@ export class Vegetation {
     pineMs[0].push(make(TREEHOUSE.x, ty, TREEHOUSE.z, 26, 0.3));
     this.trees.push({ x: TREEHOUSE.x, z: TREEHOUSE.z, r: 0.8 });
 
+    for (const [ox, oz, rad, y, sc] of this.trees_pending) { this.trees.push({ x: ox, z: oz, r: rad }); colliders.addCylinder(ox, oz, rad, y, y + sc * 0.4); }
     const cast = quality.shadows;
     this.meshes = [];
+    oaks.forEach((g, i) => { if (!oakMs[i].length) return;
+      this.meshes.push(...chunkedInstances(scene, g.trunk, oakBark, oakMs[i], { cast, receive: true }));
+      this.meshes.push(...chunkedInstances(scene, g.foliage, oakLeafMat, oakMs[i], { cast, receive: true })); });
     pines.forEach((g, i) => { if (!pineMs[i].length) return;
       this.meshes.push(...chunkedInstances(scene, g.trunk, barkMat, pineMs[i], { cast, receive: true }));
       this.meshes.push(...chunkedInstances(scene, g.foliage, pineMat, pineMs[i], { cast, receive: true })); });
@@ -241,32 +346,99 @@ export class Vegetation {
       this.meshes.push(...chunkedInstances(scene, g.trunk, birchMat, birchMs[i], { cast, receive: true }));
       this.meshes.push(...chunkedInstances(scene, g.foliage, leafMat, birchMs[i], { cast, receive: true })); });
 
-    // ---------------------------------------------------------------- grass
-    const grassMat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.85 });
-    addWind(grassMat, 0.55, 1.6, 'grass');
-    this.grassMat = grassMat;
-    const clumps = [0, 1, 2, 3].map((i) => grassClump(mulberry32(50 + i)));
-    const grassMs = clumps.map(() => []);
-    let g = 0; tries = 0;
-    while (g < quality.grass && tries < quality.grass * 12) {
+    // ------------------------------------------------------------ undergrowth
+    // bushes along forest edges and trails
+    const bushMat = new THREE.MeshStandardMaterial({ map: textures.leaves, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.82, color: 0x8aa070 });
+    addWind(bushMat, 0.12, 1.2, 'bush');
+    const bushGeos = [0, 1, 2].map((i) => bushGeometry(700 + i * 7));
+    const bushMs = bushGeos.map(() => []);
+    const nb = Math.round(quality.ferns * 0.9);
+    tries = 0;
+    while (bushMs.flat().length < nb && tries < nb * 40) {
       tries++;
-      // denser near cabin and paths
-      const a = rnd() * Math.PI * 2;
-      const rr = Math.pow(rnd(), 0.75) * 95;
-      const x = CABIN.x + Math.cos(a) * rr, z = CABIN.z + 20 + Math.sin(a) * rr * 1.1;
-      if (Math.abs(x - CABIN.x) < 7.2 && z > -4.2 && z < 6.8) continue;
-      const pd = pathDistance(x, z);
-      if (pd < 0.7) continue;
-      const hy = h(x, z);
-      if (hy < WATER_LEVEL + 0.05) continue;
+      const x = (rnd() * 2 - 1) * 160, z = (rnd() * 2 - 1) * 160;
       const fd = forestDensity(x, z);
-      if (rnd() < fd * 0.65) continue;
-      if (Math.abs(x - DOCK.x) < 1.6 && z > DOCK.zStart - 1) continue;
-      const sc = 0.7 + rnd() * 0.7 + (pd < 2 ? -0.2 : 0);
-      grassMs[g % 4].push(make(x, hy - 0.02, z, sc, rnd() * 6.28, 0.2));
-      g++;
+      const edge = 1 - Math.abs(fd - 0.45) * 2;
+      if (rnd() > Math.max(0.05, edge) || blocked(x, z, 1.6)) continue;
+      const sc = 0.8 + rnd() * 1.1;
+      bushMs[tries % 3].push(make(x, h(x, z) - 0.05, z, sc, rnd() * 6.28, 0.2));
+      if (sc > 1.4 && Math.hypot(x, z) < WORLD_RADIUS) colliders.addCylinder(x, z, 0.35 * sc, h(x, z), h(x, z) + sc * 0.6);
     }
-    clumps.forEach((c, i) => this.meshes.push(...chunkedInstances(scene, c, grassMat, grassMs[i], { receive: true })));
+    bushGeos.forEach((g2, i) => this.meshes.push(...chunkedInstances(scene, g2, bushMat, bushMs[i], { cast, receive: true })));
+
+    // reeds and cattails at the lake edge
+    const reed = reedClump(mulberry32(3));
+    const reedMat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.8 });
+    addWind(reedMat, 0.12, 0.9, 'reed');
+    const headMat = new THREE.MeshStandardMaterial({ color: 0x4a2e1a, roughness: 0.9 });
+    addWind(headMat, 0.12, 0.9, 'reedhead');
+    const reedMs = [];
+    for (let i = 0; i < 2500 && reedMs.length < (quality.key === 'low' ? 160 : 420); i++) {
+      const a = rnd() * Math.PI * 2, e = 0.9 + rnd() * 0.16;
+      const x = LAKE.x + Math.cos(a) * LAKE.rx * e, z = LAKE.z + Math.sin(a) * LAKE.rz * e;
+      const hy = h(x, z), le = lakeE(x, z);
+      if (le < 0.93 || le > 1.06 || hy < WATER_LEVEL - 0.5) continue;
+      if (Math.abs(x - DOCK.x) < 4 && z < DOCK.zEnd + 4) continue;
+      if (fbm2(x / 14, z / 14, 2) < -0.1) continue; // patchy stands
+      reedMs.push(make(x, Math.min(hy, WATER_LEVEL) - 0.05, z, 0.8 + rnd() * 0.5, rnd() * 6.28, 0.15));
+    }
+    this.meshes.push(...chunkedInstances(scene, reed.leaves, reedMat, reedMs, { receive: true }));
+    this.meshes.push(...chunkedInstances(scene, reed.heads, headMat, reedMs, { receive: true }));
+
+    // lily pads with the odd flower
+    const pad = new THREE.CircleGeometry(0.22, 14, 0.25, Math.PI * 2 - 0.5); pad.rotateX(-Math.PI / 2);
+    const padMat = new THREE.MeshStandardMaterial({ color: 0x3f6a2a, roughness: 0.45, side: THREE.DoubleSide, envMapIntensity: 0.8 });
+    const flowerG = new THREE.ConeGeometry(0.06, 0.06, 7, 1, true); flowerG.rotateX(Math.PI); flowerG.translate(0, 0.04, 0);
+    const lilyFlowerMat = new THREE.MeshStandardMaterial({ color: 0xf6e8f0, roughness: 0.5, emissive: 0x302028, side: THREE.DoubleSide });
+    const padMs = [], flMs = [];
+    for (let i = 0; i < 3000 && padMs.length < 260; i++) {
+      const cxs = [[LAKE.x - 25, LAKE.z - 8], [LAKE.x + 28, LAKE.z + 12], [LAKE.x - 10, LAKE.z + 26], [LAKE.x + 14, LAKE.z - 22]][i % 4];
+      const x = cxs[0] + (rnd() - 0.5) * 16, z = cxs[1] + (rnd() - 0.5) * 12;
+      const hy = h(x, z);
+      if (hy > WATER_LEVEL - 0.25 || hy < WATER_LEVEL - 2.5) continue;
+      const m = make(x, WATER_LEVEL + 0.012 + rnd() * 0.004, z, 0.6 + rnd() * 0.8, rnd() * 6.28);
+      padMs.push(m);
+      if (rnd() < 0.12) flMs.push(make(x + 0.05, WATER_LEVEL + 0.01, z, 0.9 + rnd() * 0.4, rnd() * 6.28));
+    }
+    const pi = new THREE.InstancedMesh(pad, padMat, padMs.length); padMs.forEach((m, i) => pi.setMatrixAt(i, m)); pi.receiveShadow = true; scene.add(pi); this.meshes.push(pi);
+    const li = new THREE.InstancedMesh(flowerG, lilyFlowerMat, flMs.length); flMs.forEach((m, i) => li.setMatrixAt(i, m)); scene.add(li); this.meshes.push(li);
+
+    // mushrooms at the feet of trees
+    const capG = new THREE.SphereGeometry(0.05, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2); capG.scale(1, 0.6, 1); capG.translate(0, 0.07, 0);
+    const stemG = new THREE.CylinderGeometry(0.012, 0.016, 0.07, 8); stemG.translate(0, 0.035, 0);
+    const shroomG = mergeGeometries([capG.toNonIndexed(), stemG.toNonIndexed()]);
+    const shroomMat = new THREE.MeshStandardMaterial({ roughness: 0.6 });
+    const shMs = [];
+    for (const t of this.trees) {
+      if (shMs.length > 600 || t.birch === undefined || rnd() > 0.35 || Math.hypot(t.x, t.z) > 140) continue;
+      for (let k = 0; k < 1 + rnd() * 4; k++) { const a = rnd() * 6.28, d = t.r + 0.2 + rnd() * 0.8; const x = t.x + Math.cos(a) * d, z = t.z + Math.sin(a) * d; shMs.push(make(x, h(x, z) - 0.01, z, 0.6 + rnd() * 1.2, rnd() * 6.28, 0.3)); }
+    }
+    const si = new THREE.InstancedMesh(shroomG, shroomMat, shMs.length);
+    const shroomCols = [new THREE.Color(0.75, 0.55, 0.35), new THREE.Color(0.55, 0.38, 0.25), new THREE.Color(0.85, 0.2, 0.12), new THREE.Color(0.9, 0.85, 0.75)];
+    shMs.forEach((m, i) => { si.setMatrixAt(i, m); si.setColorAt(i, shroomCols[Math.floor(rnd() * 4)]); });
+    si.castShadow = false; si.receiveShadow = true; scene.add(si); this.meshes.push(si);
+
+    // fallen logs and stumps
+    const logMat = new THREE.MeshStandardMaterial({ map: textures.bark.map, normalMap: textures.bark.normalMap, roughness: 1, color: 0x8a8a70 });
+    addMoss(logMat, 0.55);
+    for (let i = 0, n = 0; i < 400 && n < 34; i++) {
+      const x = (rnd() * 2 - 1) * 140, z = (rnd() * 2 - 1) * 140;
+      if (forestDensity(x, z) < 0.35 || blocked(x, z, 3)) continue;
+      const len = 3 + rnd() * 6, rad = 0.18 + rnd() * 0.18, ry = rnd() * Math.PI;
+      const g2 = new THREE.CylinderGeometry(rad * 0.85, rad, len, 12, 1); g2.rotateZ(Math.PI / 2);
+      const m = new THREE.Mesh(g2, logMat); m.position.set(x, h(x, z) + rad * 0.6, z); m.rotation.y = ry; m.castShadow = cast; m.receiveShadow = true; scene.add(m); this.meshes.push(m);
+      for (let k = -1; k <= 1; k++) colliders.addCylinder(x + Math.cos(ry) * k * len * 0.33, z - Math.sin(ry) * k * len * 0.33, rad, h(x, z) - 1, h(x, z) + rad * 1.4);
+      n++;
+    }
+    const stumpG = new THREE.CylinderGeometry(0.3, 0.42, 0.5, 12); stumpG.translate(0, 0.2, 0);
+    const stMs = [];
+    for (let i = 0; i < 300 && stMs.length < 40; i++) {
+      const x = (rnd() * 2 - 1) * 130, z = (rnd() * 2 - 1) * 130;
+      if (forestDensity(x, z) < 0.3 || blocked(x, z, 2.5)) continue;
+      const sc = 0.7 + rnd() * 0.8; stMs.push(make(x, h(x, z) - 0.05, z, sc, rnd() * 6.28, 0.1));
+      colliders.addCylinder(x, z, 0.38 * sc, h(x, z) - 1, h(x, z) + 0.45 * sc);
+    }
+    const sti = new THREE.InstancedMesh(stumpG, logMat, stMs.length); stMs.forEach((m, i) => sti.setMatrixAt(i, m)); sti.castShadow = cast; sti.receiveShadow = true; scene.add(sti); this.meshes.push(sti);
 
     // ---------------------------------------------------------------- ferns
     const fernMat = new THREE.MeshStandardMaterial({ map: textures.fern, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.8 });
@@ -298,8 +470,8 @@ export class Vegetation {
     const flowerMat = new THREE.MeshStandardMaterial({ roughness: 0.7 });
     addWind(flowerMat, 0.6, 2.0, 'flower');
     const fm = [];
-    for (let i = 0; i < (quality.grass > 5000 ? 900 : 350); i++) {
-      const a = rnd() * 6.28, rr = 9 + rnd() * 30;
+    for (let i = 0; i < (quality.grass > 5000 ? 2400 : 800); i++) {
+      const a = rnd() * 6.28, rr = 9 + rnd() * 55;
       const x = Math.cos(a) * rr, z = Math.sin(a) * rr * 0.7 + 4;
       if (blocked(x, z, 1.2) || forestDensity(x, z) > 0.4) continue;
       fm.push(make(x, h(x, z), z, 0.8 + rnd() * 0.6, rnd() * 6.28, 0.3));
@@ -311,6 +483,7 @@ export class Vegetation {
 
     // ---------------------------------------------------------------- rocks
     const rockMat = new THREE.MeshStandardMaterial({ map: textures.rock.map, normalMap: textures.rock.normalMap, roughness: 0.9, color: 0xb0aba2 });
+    addMoss(rockMat, 0.35);
     this.rockMat = rockMat;
     const rockGeos = [0, 1, 2].map((i) => rockGeometry(i * 11));
     const rms = rockGeos.map(() => []);
