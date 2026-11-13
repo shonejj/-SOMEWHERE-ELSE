@@ -61,26 +61,29 @@ function sphericalNormals(geo, center, upBias = 0.5) {
   }
 }
 
-function pineGeometry(seed) {
+function pineGeometry(seed, start = 0.14) {
   const r = mulberry32(seed);
   const trunk = new THREE.CylinderGeometry(0.012, 0.03, 1, 8, 1);
   trunk.translate(0, 0.5, 0);
   const cards = [];
-  const whorls = 13;
+  const whorls = 17;
   for (let i = 0; i < whorls; i++) {
     const t = i / whorls;
-    const y = 0.16 + t * 0.8;
-    const len = (0.26 * (1 - t) + 0.05) * (0.85 + r() * 0.3);
-    const count = Math.max(4, Math.round(8 - t * 4));
+    const y = start + 0.02 + t * (0.96 - start);
+    const len = (0.25 * (1 - t) + 0.05) * (0.8 + r() * 0.4);
+    const count = Math.max(5, Math.round(11 - t * 6));
     for (let k = 0; k < count; k++) {
-      const a = (k / count) * Math.PI * 2 + r() * 0.6 + i * 0.7;
-      const c = cardGeometry(len * 0.75, len);
+      const a = (k / count) * Math.PI * 2 + r() * 0.8 + i * 0.9;
+      const ll = len * (0.75 + r() * 0.45);
+      const c = cardGeometry(ll * (0.7 + r() * 0.3), ll);
       c.rotateY(r() * Math.PI); // spin around branch axis
-      c.rotateZ(-Math.PI / 2 - 0.15 - r() * 0.25 + t * 0.4); // point outward, droop
+      c.rotateZ(-Math.PI / 2 - 0.25 - r() * 0.35 + t * 0.5); // point outward and droop
       c.rotateY(a);
-      c.translate(0, y, 0);
+      c.translate(0, y + (r() - 0.5) * 0.03, 0);
       cards.push(c);
     }
+    // inner filler so the crown reads as dense from a distance
+    for (let k = 0; k < 2; k++) { const c = cardGeometry(len * 0.6, len * 0.55); c.rotateZ(-Math.PI / 2 + 0.6); c.rotateY(r() * 6.28); c.translate(0, y, 0); cards.push(c); }
   }
   // top tuft
   for (let k = 0; k < 3; k++) { const c = cardGeometry(0.06, 0.09); c.rotateY(k * 1.05); c.translate(0, 0.94, 0); cards.push(c); }
@@ -236,6 +239,76 @@ function rockGeometry(seed) {
   return g;
 }
 
+/**
+ * Distance LOD for instanced vegetation. Instances within `radius` of the viewer are drawn
+ * with the detailed parts (and cast shadows); the rest use a cheap far geometry, or are
+ * skipped. Lists are rebuilt only when the viewer has moved a few metres.
+ */
+export class LODInstances {
+  constructor(scene, matrices, parts, { radius = 70, far = null, cast = false } = {}) {
+    this.mats = matrices; this.radius = radius;
+    this.pos = matrices.map((m) => new THREE.Vector3().setFromMatrixPosition(m));
+    const mk = (geo, mat, castS) => { const im = new THREE.InstancedMesh(geo, mat, Math.max(1, matrices.length)); im.count = 0; im.castShadow = castS; im.receiveShadow = true; im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(im); return im; };
+    this.near = parts.map(([g, m]) => mk(g, m, cast));
+    this.far = far ? mk(far[0], far[1], false) : null;
+    this.last = new THREE.Vector3(1e9, 0, 0);
+  }
+  update(cam, force = false) {
+    if (!force && this.last.distanceToSquared(cam) < 36) return;
+    this.last.copy(cam);
+    const r2 = this.radius * this.radius;
+    let n = 0, f = 0;
+    for (let i = 0; i < this.mats.length; i++) {
+      const p = this.pos[i], dx = p.x - cam.x, dz = p.z - cam.z;
+      if (dx * dx + dz * dz < r2) { for (const im of this.near) im.setMatrixAt(n, this.mats[i]); n++; }
+      else if (this.far) { this.far.setMatrixAt(f, this.mats[i]); f++; }
+    }
+    for (const im of this.near) { im.count = n; im.instanceMatrix.needsUpdate = true; }
+    if (this.far) { this.far.count = f; this.far.instanceMatrix.needsUpdate = true; }
+  }
+}
+
+/** Renders a detailed tree once into a texture and returns crossed billboard cards using it. */
+function makeImpostor(renderer, parts, tint = 0xffffff) {
+  const sc = new THREE.Scene();
+  const box = new THREE.Box3();
+  for (const [g, m] of parts) { g.computeBoundingBox(); box.union(g.boundingBox); const mesh = new THREE.Mesh(g, m); sc.add(mesh); }
+  sc.add(new THREE.AmbientLight(0xffffff, 1.0));
+  const w = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 1.02, h = (box.max.y - box.min.y) * 1.02;
+  const cam = new THREE.OrthographicCamera(-w / 2, w / 2, box.max.y + 0.01, box.min.y, -5, 5);
+  cam.position.set(0, 0, 2); cam.lookAt(0, (box.max.y + box.min.y) / 2 * 0, 0); cam.position.set(0, 0, 2);
+  const W = 256, H = Math.min(1024, Math.round(256 * h / w / 64) * 64 || 512);
+  const rt = new THREE.WebGLRenderTarget(W, H, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
+  const prevRT = renderer.getRenderTarget(), prevClear = renderer.getClearColor(new THREE.Color()), prevA = renderer.getClearAlpha();
+  const prevShadow = renderer.shadowMap.enabled;
+  renderer.shadowMap.enabled = false;
+  renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 0); renderer.clear();
+  renderer.render(sc, cam);
+  renderer.setRenderTarget(prevRT); renderer.setClearColor(prevClear, prevA);
+  renderer.shadowMap.enabled = prevShadow;
+  const cards = [];
+  for (let i = 0; i < 3; i++) {
+    const q = new THREE.PlaneGeometry(w, h); q.translate(0, box.min.y + h / 2, 0); q.rotateY((i / 3) * Math.PI);
+    cards.push(q);
+  }
+  const geo = mergeGeometries(cards);
+  sphericalNormals(geo, new THREE.Vector3(0, box.min.y + h * 0.45, 0), 0.5);
+  const mat = new THREE.MeshStandardMaterial({ map: rt.texture, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.92, color: tint });
+  return [geo, mat];
+}
+
+function colored(geo, c) { const g = geo.index ? geo.toNonIndexed() : geo; const n = g.attributes.position.count; const a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c[0]; a[i * 3 + 1] = c[1]; a[i * 3 + 2] = c[2]; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); if (g.attributes.uv) g.deleteAttribute('uv'); return g; }
+function farPine() {
+  const parts = [colored(new THREE.CylinderGeometry(0.012, 0.025, 0.3, 5).translate(0, 0.15, 0), [0.22, 0.16, 0.11])];
+  [[0.15, 0.27, 0.42], [0.42, 0.2, 0.32], [0.65, 0.13, 0.3]].forEach(([y, r, h], i) => parts.push(colored(new THREE.ConeGeometry(r, h, 7, 1, true).translate(0, y + h / 2, 0), [0.07 + i * 0.01, 0.14 + i * 0.015, 0.08])));
+  const g = mergeGeometries(parts); sphericalNormals(g, new THREE.Vector3(0, 0.4, 0), 0.6); return g;
+}
+function farLeafy(col, trunkCol) {
+  const parts = [colored(new THREE.CylinderGeometry(0.012, 0.025, 0.55, 5).translate(0, 0.27, 0), trunkCol)];
+  [[0, 0.68, 0, 0.2], [0.09, 0.58, 0.05, 0.15], [-0.08, 0.6, -0.06, 0.15], [0.02, 0.82, -0.03, 0.13]].forEach(([x, y, z, r]) => parts.push(colored(new THREE.IcosahedronGeometry(r, 1).translate(x, y, z), col)));
+  const g = mergeGeometries(parts); sphericalNormals(g, new THREE.Vector3(0, 0.6, 0), 0.5); return g;
+}
+
 /** Splits instances into spatial chunks so frustum culling works. */
 function chunkedInstances(scene, geo, mat, matrices, opts = {}) {
   const CH = 90, groups = new Map();
@@ -260,7 +333,7 @@ function chunkedInstances(scene, geo, mat, matrices, opts = {}) {
 }
 
 export class Vegetation {
-  constructor(scene, quality, textures, terrain, colliders) {
+  constructor(scene, quality, textures, terrain, colliders, renderer) {
     const rnd = mulberry32(2024);
     const h = (x, z) => terrain.heightAt(x, z);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), e = new THREE.Euler();
@@ -281,7 +354,7 @@ export class Vegetation {
     textures.bark.map.repeat.set(3, 6); textures.bark.normalMap.repeat.set(3, 6);
     const birchMat = new THREE.MeshStandardMaterial({ map: textures.birch.map, normalMap: textures.birch.normalMap, roughness: 0.8 });
     textures.birch.map.repeat.set(2, 5); textures.birch.normalMap.repeat.set(2, 5);
-    const pineMat = new THREE.MeshStandardMaterial({ map: textures.pine, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.92, color: 0xb8c8b0 });
+    const pineMat = new THREE.MeshStandardMaterial({ map: textures.pine, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.92, color: 0xa4b89c });
     addWind(pineMat, 0.035, 1.0, 'pine');
     const leafMat = new THREE.MeshStandardMaterial({ map: textures.leaves, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85 });
     addWind(leafMat, 0.06, 1.0, 'leaf');
@@ -303,17 +376,19 @@ export class Vegetation {
     this.trees = [];
     const target = quality.trees;
     let tries = 0, placed = 0;
-    const R = 300;
+    const R = 300; const grid = new Map();
     while (placed < target && tries < target * 40) {
       tries++;
       const x = (rnd() * 2 - 1) * R, z = (rnd() * 2 - 1) * R;
       const r = Math.hypot(x, z);
       if (r > R) continue;
-      const fd = r > WORLD_RADIUS + 10 ? 0.75 : forestDensity(x, z);
+      const fd = r > WORLD_RADIUS + 10 ? 0.8 : Math.min(1, forestDensity(x, z) * 1.25);
       if (rnd() > fd) continue;
       if (blocked(x, z)) continue;
       // spacing
-      if (r < 120) { let ok = true; for (const t of this.trees) { if ((t.x - x) ** 2 + (t.z - z) ** 2 < 9) { ok = false; break; } } if (!ok) continue; }
+      { const key = Math.floor(x / 4) + ',' + Math.floor(z / 4); let ok = true;
+        for (let gx = -1; gx <= 1 && ok; gx++) for (let gz = -1; gz <= 1 && ok; gz++) { const l = grid.get((Math.floor(x / 4) + gx) + ',' + (Math.floor(z / 4) + gz)); if (l) for (const t of l) if ((t.x - x) ** 2 + (t.z - z) ** 2 < 7.5) { ok = false; break; } }
+        if (!ok) continue; if (!grid.has(key)) grid.set(key, []); grid.get(key).push({ x, z }); }
       const y = h(x, z) - 0.15;
       const nearLake = lakeE(x, z) < 1.6;
       const isBirch = (nearLake ? rnd() < 0.45 : rnd() < 0.12) && r < WORLD_RADIUS;
@@ -330,21 +405,22 @@ export class Vegetation {
     }
     // hero tree for the tree house
     const ty = h(TREEHOUSE.x, TREEHOUSE.z) - 0.2;
-    pineMs[0].push(make(TREEHOUSE.x, ty, TREEHOUSE.z, 26, 0.3));
     this.trees.push({ x: TREEHOUSE.x, z: TREEHOUSE.z, r: 0.8 });
 
     for (const [ox, oz, rad, y, sc] of this.trees_pending) { this.trees.push({ x: ox, z: oz, r: rad }); colliders.addCylinder(ox, oz, rad, y, y + sc * 0.4); }
     const cast = quality.shadows;
     this.meshes = [];
-    oaks.forEach((g, i) => { if (!oakMs[i].length) return;
-      this.meshes.push(...chunkedInstances(scene, g.trunk, oakBark, oakMs[i], { cast, receive: true }));
-      this.meshes.push(...chunkedInstances(scene, g.foliage, oakLeafMat, oakMs[i], { cast, receive: true })); });
-    pines.forEach((g, i) => { if (!pineMs[i].length) return;
-      this.meshes.push(...chunkedInstances(scene, g.trunk, barkMat, pineMs[i], { cast, receive: true }));
-      this.meshes.push(...chunkedInstances(scene, g.foliage, pineMat, pineMs[i], { cast, receive: true })); });
-    birches.forEach((g, i) => { if (!birchMs[i].length) return;
-      this.meshes.push(...chunkedInstances(scene, g.trunk, birchMat, birchMs[i], { cast, receive: true }));
-      this.meshes.push(...chunkedInstances(scene, g.foliage, leafMat, birchMs[i], { cast, receive: true })); });
+    const farMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
+    const R0 = quality.treeLOD;
+    this.lods = [];
+    const L2 = (ms, parts) => { if (ms.length) this.lods.push(new LODInstances(scene, ms, parts, { radius: R0, far: renderer ? makeImpostor(renderer, parts) : null, cast })); };
+    pines.forEach((g, i) => L2(pineMs[i], [[g.trunk, barkMat], [g.foliage, pineMat]]));
+    birches.forEach((g, i) => L2(birchMs[i], [[g.trunk, birchMat], [g.foliage, leafMat]]));
+    oaks.forEach((g, i) => L2(oakMs[i], [[g.trunk, oakBark], [g.foliage, oakLeafMat]]));
+    // the tree-house tree: a tall pine whose branches start above the hut
+    const hero = pineGeometry(901, 0.42);
+    const heroM = new THREE.Matrix4().compose(new THREE.Vector3(TREEHOUSE.x, h(TREEHOUSE.x, TREEHOUSE.z) - 0.2, TREEHOUSE.z), new THREE.Quaternion(), new THREE.Vector3(26, 26, 26));
+    for (const [g, m] of [[hero.trunk, barkMat], [hero.foliage, pineMat]]) { const mm = new THREE.Mesh(g, m); mm.applyMatrix4(heroM); mm.castShadow = cast; mm.receiveShadow = true; scene.add(mm); }
 
     // ------------------------------------------------------------ undergrowth
     // bushes along forest edges and trails
@@ -364,7 +440,7 @@ export class Vegetation {
       bushMs[tries % 3].push(make(x, h(x, z) - 0.05, z, sc, rnd() * 6.28, 0.2));
       if (sc > 1.4 && Math.hypot(x, z) < WORLD_RADIUS) colliders.addCylinder(x, z, 0.35 * sc, h(x, z), h(x, z) + sc * 0.6);
     }
-    bushGeos.forEach((g2, i) => this.meshes.push(...chunkedInstances(scene, g2, bushMat, bushMs[i], { cast, receive: true })));
+    bushGeos.forEach((g2, i) => { if (bushMs[i].length) this.lods.push(new LODInstances(scene, bushMs[i], [[g2, bushMat]], { radius: R0 * 0.9, cast })); });
 
     // reeds and cattails at the lake edge
     const reed = reedClump(mulberry32(3));
@@ -382,8 +458,7 @@ export class Vegetation {
       if (fbm2(x / 14, z / 14, 2) < -0.1) continue; // patchy stands
       reedMs.push(make(x, Math.min(hy, WATER_LEVEL) - 0.05, z, 0.8 + rnd() * 0.5, rnd() * 6.28, 0.15));
     }
-    this.meshes.push(...chunkedInstances(scene, reed.leaves, reedMat, reedMs, { receive: true }));
-    this.meshes.push(...chunkedInstances(scene, reed.heads, headMat, reedMs, { receive: true }));
+    if (reedMs.length) this.lods.push(new LODInstances(scene, reedMs, [[reed.leaves, reedMat], [reed.heads, headMat]], { radius: R0 * 1.2 }));
 
     // lily pads with the odd flower
     const pad = new THREE.CircleGeometry(0.22, 14, 0.25, Math.PI * 2 - 0.5); pad.rotateX(-Math.PI / 2);
@@ -461,7 +536,7 @@ export class Vegetation {
       if (rnd() > forestDensity(x, z) || blocked(x, z, 1.4)) continue;
       fernMs.push(make(x, h(x, z) - 0.05, z, 0.7 + rnd() * 0.8, rnd() * 6.28, 0.2));
     }
-    this.meshes.push(...chunkedInstances(scene, fernGeo, fernMat, fernMs, { receive: true }));
+    if (fernMs.length) this.lods.push(new LODInstances(scene, fernMs, [[fernGeo, fernMat]], { radius: R0 * 0.8 }));
 
     // ---------------------------------------------------------------- flowers
     const petal = new THREE.CircleGeometry(0.035, 6); petal.rotateX(-Math.PI / 2); petal.translate(0, 0.28, 0);
@@ -470,7 +545,7 @@ export class Vegetation {
     const flowerMat = new THREE.MeshStandardMaterial({ roughness: 0.7 });
     addWind(flowerMat, 0.6, 2.0, 'flower');
     const fm = [];
-    for (let i = 0; i < (quality.grass > 5000 ? 2400 : 800); i++) {
+    for (let i = 0; i < (quality.key === "low" ? 900 : 2600); i++) {
       const a = rnd() * 6.28, rr = 9 + rnd() * 55;
       const x = Math.cos(a) * rr, z = Math.sin(a) * rr * 0.7 + 4;
       if (blocked(x, z, 1.2) || forestDensity(x, z) > 0.4) continue;
@@ -502,7 +577,8 @@ export class Vegetation {
     rockGeos.forEach((gg, i) => this.meshes.push(...chunkedInstances(scene, gg, rockMat, rms[i], { cast, receive: true })));
   }
 
-  update(elapsed, weather) {
+  update(elapsed, weather, cam) {
+    if (cam) for (const l of this.lods) l.update(cam);
     windUniforms.uTime.value = elapsed;
     windUniforms.uWind.value = weather.w.gust ?? 0.4;
   }

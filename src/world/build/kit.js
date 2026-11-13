@@ -19,6 +19,40 @@ export function worldUV(geo, tile = 1) {
   return geo;
 }
 
+export const glassRain = { value: 0 };
+export const glassTime = { value: 0 };
+
+function rainyGlass(m) {
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uRain = glassRain; sh.uniforms.uT = glassTime;
+    sh.vertexShader = 'varying vec3 vGW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvGW = (modelMatrix * vec4(position, 1.0)).xyz;');
+    sh.fragmentShader = `uniform float uRain; uniform float uT; varying vec3 vGW;
+float gh(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float drops(vec2 uv){
+  float d = 0.0;
+  // beaded droplets
+  vec2 g = uv * 38.0; vec2 id = floor(g); vec2 f = fract(g) - 0.5;
+  float r = gh(id); vec2 c = (vec2(gh(id + 1.3), gh(id + 7.1)) - 0.5) * 0.6;
+  d += smoothstep(0.16 * r + 0.03, 0.0, length((f - c) * vec2(1.0, 0.8))) * step(0.45, r);
+  // running drops with trails
+  vec2 g2 = vec2(uv.x * 14.0, uv.y * 3.0); float col = floor(g2.x); float rr = gh(vec2(col, 3.0));
+  float y = fract(g2.y + uT * (0.15 + rr * 0.35) + rr * 7.0);
+  float x = fract(g2.x) - 0.5 + sin(uv.y * 30.0 + col) * 0.05;
+  d += smoothstep(0.09, 0.0, length(vec2(x * 2.0, (y - 0.5) * 3.0))) * step(0.55, rr);
+  d += smoothstep(0.03, 0.0, abs(x)) * smoothstep(0.5, 1.0, y) * step(0.55, rr) * 0.35;
+  return d;
+}
+` + sh.fragmentShader.replace('#include <opaque_fragment>', `
+  vec2 guv = vec2(vGW.x + vGW.z, vGW.y);
+  float dr = drops(guv) * uRain;
+  outgoingLight += vec3(0.6, 0.65, 0.7) * dr * 0.5;
+  diffuseColor.a = min(1.0, diffuseColor.a + dr * 0.35);
+  #include <opaque_fragment>`);
+  };
+  m.customProgramCacheKey = () => 'rainy-glass';
+  return m;
+}
+
 export function makeMaterials(T) {
   const std = (o) => new THREE.MeshStandardMaterial(o);
   const tex = (t, o = {}) => ({ map: t.map, normalMap: t.normalMap, ...o });
@@ -38,7 +72,7 @@ export function makeMaterials(T) {
     iron: std({ color: 0x1d1b1a, roughness: 0.55, metalness: 0.7 }),
     brass: std({ color: 0xb48a46, roughness: 0.3, metalness: 1 }),
     steel: std({ color: 0xc8ccd0, roughness: 0.25, metalness: 1 }),
-    glass: new THREE.MeshPhysicalMaterial({ color: 0xdfeaf0, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.16, depthWrite: false, envMapIntensity: 1.4, side: THREE.DoubleSide }),
+    glass: rainyGlass(new THREE.MeshPhysicalMaterial({ color: 0xdfeaf0, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.16, depthWrite: false, envMapIntensity: 1.4, side: THREE.DoubleSide })),
     sofa: std(tex(T.sofa, { roughness: 0.95, envMapIntensity: 0.3 })),
     wool: std(tex(T.wool, { roughness: 0.95, envMapIntensity: 0.3 })),
     linen: std(tex(T.linen, { roughness: 0.92, envMapIntensity: 0.3 })),

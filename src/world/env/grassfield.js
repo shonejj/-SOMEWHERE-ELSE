@@ -29,33 +29,39 @@ export class GrassField {
     const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat, THREE.HalfFloatType);
     tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
 
-    const counts = { low: [6000, 19], medium: [12000, 26], high: [22000, 34], ultra: [36000, 42] };
-    const [N, radius] = counts[quality.key] || counts.medium;
+    this.layers = [];
+    this.tex = tex;
+    const near = quality.grassNear, far = quality.grassFar;
+    this.layers.push(this.makeLayer(scene, n, step, half, near[0], near[1], near[2], 0, 1.0, 11));
+    this.layers.push(this.makeLayer(scene, n, step, half, far[0], far[1], far[2], near[1] * 0.75, 1.35, 23));
+  }
+
+  makeLayer(scene, n, step, half, N, radius, blades, inner, scale, seed) {
     const tile = radius * 2;
-    const blades = quality.key === 'low' ? 5 : 6;
-    const r = mulberry32(99);
+    const r = mulberry32(seed);
     const pos = [], off = [], col = [], idx = [];
     let v0 = 0;
     for (let c = 0; c < N; c++) {
       const ox = r(), oz = r(), rr = r();
       const dry = r();
       for (let b = 0; b < blades; b++) {
-        const a = r() * Math.PI * 2, d = r() * 0.16;
+        const a = r() * Math.PI * 2, d = r() * 0.17 * scale;
         const bx = Math.cos(a) * d, bz = Math.sin(a) * d;
-        const h = 0.28 + r() * 0.42, w = 0.012 + r() * 0.012;
+        const h = (0.26 + r() * 0.4) * scale, w = (0.013 + r() * 0.012) * scale;
         const ry = r() * Math.PI, cx = Math.cos(ry), sz = Math.sin(ry), lean = (r() - 0.5) * 0.6;
-        const shade = 0.72 + r() * 0.4;
-        const tint = dry < 0.18 ? [0.35, 0.33, 0.12] : dry < 0.4 ? [0.2, 0.32, 0.08] : [0.13, 0.3, 0.07];
+        const shade = 0.75 + r() * 0.35;
+        // mostly fresh green, a few yellowing blades
+        const tint = dry < 0.1 ? [0.34, 0.31, 0.13] : dry < 0.35 ? [0.17, 0.27, 0.08] : [0.11, 0.24, 0.06];
         for (let s = 0; s <= 2; s++) {
           const t = s / 2, ww = w * (1 - t * 0.8), o = lean * t * t * h, y = t * h;
           for (const side of [-1, 1]) {
             pos.push(bx + cx * ww * side + o * sz, y, bz + sz * ww * side - o * cx);
             off.push(ox, oz, rr);
-            const g = 0.45 + t * 0.75;
-            col.push(tint[0] * g * shade * (0.8 + t * 0.6), tint[1] * g * shade, tint[2] * g * shade);
+            const g = 0.38 + t * 0.7;
+            col.push(tint[0] * g * shade, tint[1] * g * shade * (0.95 + t * 0.15), tint[2] * g * shade);
           }
         }
-        pos.push(bx + lean * h * sz * 1.2, h * 1.08, bz - lean * h * cx * 1.2); off.push(ox, oz, rr); col.push(tint[0] * 1.3 * shade, tint[1] * 1.25 * shade, tint[2] * shade);
+        pos.push(bx + lean * h * sz * 1.2, h * 1.08, bz - lean * h * cx * 1.2); off.push(ox, oz, rr); col.push(tint[0] * 1.35 * shade, tint[1] * 1.35 * shade, tint[2] * 1.2 * shade);
         idx.push(v0, v0 + 1, v0 + 2, v0 + 1, v0 + 3, v0 + 2, v0 + 2, v0 + 3, v0 + 4, v0 + 3, v0 + 5, v0 + 4, v0 + 4, v0 + 5, v0 + 6);
         v0 += 7;
       }
@@ -64,15 +70,13 @@ export class GrassField {
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('aOff', new THREE.Float32BufferAttribute(off, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(pos.length).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
     g.setIndex(idx);
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
-
-    this.u = { uCam: { value: new THREE.Vector3() }, uTile: { value: tile }, uHM: { value: tex }, uN: { value: n }, uStep: { value: step }, uHalf: { value: half } };
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.78 });
+    const u = { uCam: { value: new THREE.Vector3() }, uTile: { value: tile }, uHM: { value: this.tex }, uN: { value: n }, uStep: { value: step }, uHalf: { value: half }, uInner: { value: inner } };
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.75 });
     mat.onBeforeCompile = (sh) => {
-      Object.assign(sh.uniforms, this.u, { uTime: windUniforms.uTime, uWind: windUniforms.uWind });
-      sh.vertexShader = `uniform vec3 uCam; uniform float uTile; uniform sampler2D uHM; uniform float uN; uniform float uStep; uniform float uHalf; uniform float uTime; uniform float uWind;
+      Object.assign(sh.uniforms, u, { uTime: windUniforms.uTime, uWind: windUniforms.uWind });
+      sh.vertexShader = `uniform vec3 uCam; uniform float uTile; uniform sampler2D uHM; uniform float uN; uniform float uStep; uniform float uHalf; uniform float uTime; uniform float uWind; uniform float uInner;
 attribute vec3 aOff;\n` + sh.vertexShader
         .replace('#include <beginnormal_vertex>', `vec3 objectNormal = vec3(0.0, 1.0, 0.0);`)
         .replace('#include <begin_vertex>', `
@@ -81,9 +85,9 @@ attribute vec3 aOff;\n` + sh.vertexShader
           vec2 tuv = ((wp + uHalf) / uStep + 0.5) / uN;
           vec4 hm = texture2D(uHM, tuv);
           float dist = length(wp - uCam.xz);
-          float fade = 1.0 - smoothstep(uTile * 0.3, uTile * 0.5, dist);
+          float fade = (1.0 - smoothstep(uTile * 0.32, uTile * 0.5, dist)) * smoothstep(uInner * 0.85, uInner * 1.15 + 0.001, dist + (uInner > 0.0 ? 0.0 : 1.0));
           float sc = hm.g * fade * hm.b * (0.75 + aOff.z * 0.55);
-          sc = sc < 0.12 ? 0.0 : sc;
+          sc = sc < 0.1 ? 0.0 : sc;
           float a = aOff.z * 6.2831;
           vec3 lp = position * sc;
           lp.xz = mat2(cos(a), -sin(a), sin(a), cos(a)) * lp.xz;
@@ -94,15 +98,21 @@ attribute vec3 aOff;\n` + sh.vertexShader
           float k = hh * hh * (0.12 + uWind * (0.6 + gust * 0.8)) * sc;
           lp.x += (sway + uWind * 0.7) * k * 0.55;
           lp.z += sin(uTime * 1.3 + ph * 1.7) * k * 0.25;
+          // part the grass around the walker
+          vec2 away = wp - uCam.xz; float pd = length(away);
+          lp.xz += away / max(pd, 0.01) * smoothstep(0.7, 0.0, pd) * position.y * 0.6;
           vec3 transformed = vec3(wp.x + lp.x, hm.r + lp.y - 0.02, wp.y + lp.z);
         `);
     };
-    mat.customProgramCacheKey = () => 'grassfield';
-    this.mesh = new THREE.Mesh(g, mat);
-    this.mesh.frustumCulled = false;
-    this.mesh.receiveShadow = true;
-    scene.add(this.mesh);
+    mat.customProgramCacheKey = () => 'grassfield' + seed;
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.frustumCulled = false; mesh.receiveShadow = true;
+    scene.add(mesh);
+    return { mesh, u };
   }
 
-  update(camera) { this.u.uCam.value.copy(camera.position); }
+  get mesh() { return this.layers[0].mesh; }
+  setVisible(v) { for (const l of this.layers) l.mesh.visible = v; }
+
+  update(camera) { for (const l of this.layers) l.u.uCam.value.copy(camera.position); }
 }

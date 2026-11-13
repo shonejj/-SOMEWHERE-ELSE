@@ -8,7 +8,7 @@ _Last verified: 2026-11-12 against the exact versions pinned in `package-lock.js
 
 | Package | Version | Licence | Source | Used for |
 |---|---|---|---|---|
-| three | 0.187.0 | MIT | https://github.com/mrdoob/three.js | Rendering, plus addons `Water`, `RoundedBoxGeometry`, `BufferGeometryUtils`, `EffectComposer`/`UnrealBloomPass`/`OutputPass` (same MIT licence) |
+| three | 0.187.0 | MIT | https://github.com/mrdoob/three.js | Rendering, plus addons `Water`, `RoundedBoxGeometry`, `BufferGeometryUtils`, `EffectComposer`/`UnrealBloomPass`/`OutputPass`, `Reflector` (same MIT licence) |
 | cannon-es | 0.20.0 | MIT | https://github.com/pmndrs/cannon-es | Rigid-body physics |
 | @fontsource/cormorant-garamond | 5.3.0 | OFL-1.1 (font), MIT (package) | https://github.com/fontsource/font-files | Display serif (self-hosted, no Google requests) |
 | @fontsource/inter | 5.3.0 | OFL-1.1 (font), MIT (package) | https://github.com/fontsource/font-files | UI sans-serif (self-hosted) |
@@ -32,6 +32,9 @@ GitHub Actions used for deployment (`actions/checkout`, `actions/setup-node`) ar
 | Water normal map | `src/world/core/textures.js` (sum of integer-frequency waves) |
 | Terrain, pines, birches, oaks, bushes, GPU grass field, ferns, flowers, reeds, lily pads, mushrooms, logs, stumps, rocks + moss | `src/world/env/*.js` |
 | First-person hands and sleeves | `src/world/systems/hands.js` |
+| Full player body (sweater, jeans, boots; denim & leather textures) | `src/world/systems/body.js`, `core/textures.js` |
+| Distant-tree impostor billboards (rendered at load from the procedural trees) | `src/world/env/vegetation.js` |
+| Lake shader, caustics, puddles, rain on glass, splash/drip particles | `src/world/env/water.js`, `env/terrain.js`, `build/kit.js`, `systems/splashes.js` |
 | Cabin, furniture, props, dock, tree house, clearing | `src/world/build/*.js` |
 | Deer, birds, butterflies, dragonflies, ducks, fish, fireflies, drifting leaves | `src/world/systems/wildlife.js` |
 | Sky, clouds, stars, moon, rain, fire, smoke shaders | `src/world/env/sky.js`, `env/weather.js`, `build/props.js` |

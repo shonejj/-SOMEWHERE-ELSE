@@ -24,6 +24,8 @@ There are no quests, no enemies, no scores, no timers and no objectives. Just a 
 
 **You**
 
+- **A full body built in code**: knitted sweater, belt, jeans and leather boots. Look down and you see yourself; your shadow walks, runs, crouches and sits with you. Legs use two-bone IK (walking and running gaits, crouching, sitting with knees bent, climbing the ladder), arms swing in opposition and hand over to the first-person hands when you reach for something.
+- **Swimming**: wade into the lake and, once it's deeper than your chest, you float and swim (breaststroke hands in view, Shift to swim faster, Space to kick up). Feet, strokes, dives and thrown objects throw up water droplets and ripples.
 - **First-person hands** with jointed fingers, skin and knitted sleeves. They stay out of the way until you look at something usable, then reach out: a pointing finger for switches, lamps and the radio, an open palm to push doors, windows and drawers, a grip to pick things up. Carried objects sit in your hand, and when you inspect something both hands come up to turn it over.
 - Aiming is forgiving: small objects (a mug, a pine cone) are picked up when they're near the crosshair, not only when it's exactly on them, with a wider margin on touch screens.
 
@@ -31,7 +33,8 @@ There are no quests, no enemies, no scores, no timers and no objectives. Just a 
 
 - Day/night cycle (one day ≈ one hour) with a procedural sky: sun, moon, stars, Milky Way, moving clouds.
 - Dynamic weather that drifts between clear, overcast, rain, storm (lightning + delayed thunder) and fog — or lock it in the menu.
-- Rain streaks that stop under the roofs, ground splashes, ripples on the lake, wet darkening ground and roofs.
+- Rain streaks that stop under the roofs; splashes on the ground **and on the roofs**; water dripping from the eaves and splashing below; puddles that form in the trails and mud with rain rings in them; rings and stippling across the whole lake; droplets beading and running down the window glass; wet, darker, glossier ground, decks and shingles.
+- A clear lake: you can see the lake bed (with moving caustics) through shallow water, which deepens to dark green-blue; fresnel reflections (a true mirror reflection on High/Ultra), sun glints and a soft foam line at the shore.
 - Lush, wind-driven nature: a dense GPU grass field that surrounds you wherever you walk, pines, birch and broadleaf oaks, bushes along the forest edges, ferns, thousands of wildflowers, reeds and cattails at the water's edge, lily pads (some flowering), mushrooms at the feet of trees, fallen mossy logs and stumps, moss on the tops of rocks, and leaves drifting on the wind.
 - Curtains billow when a window is open.
 - Wildlife: deer (graze, look up, bolt if you rush them — crouch to get closer), a flock of birds, butterflies over the meadow, dragonflies darting along the shore, ducks, jumping fish, fireflies on dry nights, bird song, owls, crickets and frogs.
@@ -75,7 +78,7 @@ If the site is not live after the first run, open **Settings → Pages**, choose
 
 ## Graphics & performance
 
-The pause menu offers **Low / Medium / High / Ultra** (phones default to Low, desktops to High). Presets scale render resolution, grass density and radius, bloom (High/Ultra), shadow-map size, texture resolution, vegetation density, rain particle count, terrain resolution and planar lake reflections (High/Ultra). On top of that a **dynamic-resolution** controller lowers or raises the render scale every two seconds to hold a smooth frame rate. Static geometry is merged into a few draw calls per material, vegetation is instanced in spatial chunks so frustum culling works, and the world code is lazily loaded (and pre-fetched while you read the landing page).
+The pause menu offers **Low / Medium / High / Ultra** (phones default to Low; desktops are matched to the GPU the browser reports: Medium for integrated graphics, High for dedicated cards) and a **frame-rate cap** (30 · cool & quiet — the default on phones — / 60 / unlimited). Vegetation uses distance LOD: only trees, bushes and ferns near you are fully detailed and cast shadows; distant trees are billboard impostors rendered from the real trees at load time, which allowed roughly doubling the forest while cutting draw calls by ~90%. Shadows refresh every other frame below Ultra, the lake mirror refreshes every other frame without grass or particles, and nothing renders while the game is paused. Presets scale render resolution, grass density and radius, bloom (High/Ultra), shadow-map size, texture resolution, vegetation density, rain particle count, terrain resolution and planar lake reflections (High/Ultra). On top of that a **dynamic-resolution** controller lowers or raises the render scale every two seconds to hold a smooth frame rate. Static geometry is merged into a few draw calls per material, vegetation is instanced in spatial chunks so frustum culling works, and the world code is lazily loaded (and pre-fetched while you read the landing page).
 
 ## Architecture
 

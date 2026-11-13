@@ -25,6 +25,6 @@ export const PLACES = [
   { id: 'porch', name: 'Porch', pos: [-0.5, 0, 4.9], yaw: Math.PI },
   { id: 'dock', name: 'Dock', pos: [6, 0, 30], yaw: Math.PI },
   { id: 'treehouse', name: 'Tree house', pos: [TREEHOUSE.x + 1.6, 0, TREEHOUSE.z - 1.1], yaw: Math.atan2(-(6 - TREEHOUSE.x - 1.6), -(58 - TREEHOUSE.z + 1.1)) },
-  { id: 'clearing', name: 'Forest clearing', pos: [CLEARING.x - 3, 0, CLEARING.z + 4], yaw: 0.6 },
+  { id: 'clearing', name: 'Forest clearing', pos: [CLEARING.x - 3.2, 0, CLEARING.z + 4.2], yaw: Math.atan2(-3.2, 4.2) },
   { id: 'lakeshore', name: 'Far lakeshore', pos: [-20, 0, 95], yaw: 0.2 },
 ];

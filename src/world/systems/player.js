@@ -1,7 +1,7 @@
 // First-person character: walking, running, crouching, jumping, ladders, sitting.
 import * as THREE from 'three';
 import { WATER_LEVEL, WORLD_RADIUS } from '../core/layout.js';
-import { pathDistance } from '../env/terrain.js';
+import { pathDistance, lakeE } from '../env/terrain.js';
 
 const STAND = 1.72, CROUCH = 1.12, RADIUS = 0.27, STEP = 0.42;
 const tmpV = new THREE.Vector3();
@@ -27,13 +27,18 @@ export class Player {
     this.flashlight.castShadow = false;
     camera.add(this.flashlight, this.flashlight.target);
     this.flashOn = false;
+    this.swimming = false; this.swimPhase = 0; this.stepLen = 1.25; this.speedH = 0;
+    this.onSplash = null; this.onStroke = null;
   }
 
   /** Moves the player; yHint is the floor height to search below (defaults to terrain). */
   teleport(x, yHint, z, yaw) {
     const base = yHint ?? this.terrain.heightAt(x, z);
     this.pos.set(x, 0, z);
-    this.pos.y = this.findSupport(x, z, base + 0.8).y;
+    const sup = this.findSupport(x, z, base + 0.8);
+    this.pos.y = sup.y;
+    this.swimming = !sup.box && WATER_LEVEL - sup.y > 1.38 && lakeE(x, z) < 1.3;
+    if (this.swimming) this.pos.y = WATER_LEVEL - 1.42;
     this.vel.set(0, 0, 0);
     if (yaw !== undefined) this.yaw = yaw;
     this.pitch = 0; this.eyeY = this.pos.y + this.height - 0.1; this.mode = 'walk'; this.seat = null;
@@ -102,10 +107,11 @@ export class Player {
     const running = (inp.down('ShiftLeft') || inp.down('ShiftRight')) && !this.crouching;
     const wading = this.pos.y < WATER_LEVEL - 0.15;
     let speed = this.crouching ? 1.35 : running ? 4.6 : 2.45;
-    if (wading) speed *= 0.55;
+    if (wading) speed *= 0.55 + Math.max(0, (this.pos.y - (WATER_LEVEL - 1.2))) * 0.3;
+    if (this.swimming) { speed = running ? 2.2 : 1.45; this.crouchToggle = false; }
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
     const wx = (-sy * ax.y + cy * ax.x) * speed, wz = (-cy * ax.y - sy * ax.x) * speed;
-    const accel = this.onGround ? 11 : 2.2;
+    const accel = this.swimming ? 2.6 : this.onGround ? 11 : 2.2;
     const k = 1 - Math.exp(-accel * dt);
     this.vel.x += (wx - this.vel.x) * k; this.vel.z += (wz - this.vel.z) * k;
 
@@ -119,6 +125,13 @@ export class Player {
       if (this.pos.y > ladder.max.y - 0.3 && ax.y > 0) { this.vel.x += ladder.dir.x * 1.2; this.vel.z += ladder.dir.z * 1.2; this.vel.y = Math.max(this.vel.y, 1); }
       this.climbing = true;
       this.travel += Math.abs(this.vel.y) * dt * 1.6;
+    } else if (this.swimming) {
+      this.climbing = false;
+      // buoyancy: float with the head above the surface, gentle bobbing
+      const target = WATER_LEVEL - 1.42 + Math.sin(this.swimPhase * 2) * 0.03;
+      this.vel.y += ((target - this.pos.y) * 9 - this.vel.y * 4) * dt;
+      if (this.pos.y < target - 0.4) this.vel.y = Math.max(this.vel.y, 2.5); // surface quickly after a plunge
+      if (inp.hit('Space')) this.vel.y += 1.2;
     } else {
       this.climbing = false;
       this.vel.y -= 9.81 * dt;
@@ -137,9 +150,14 @@ export class Player {
       // world edge
       const r = Math.hypot(this.pos.x, this.pos.z);
       if (r > WORLD_RADIUS) { this.pos.x *= WORLD_RADIUS / r; this.pos.z *= WORLD_RADIUS / r; }
-      let sup = this.findSupport(this.pos.x, this.pos.z, this.pos.y + STEP);
-      // deep water blocks: step back onto the last safe spot
-      if (sup.y < WATER_LEVEL - 1.05) { this.pos.x = ox; this.pos.z = oz; this.vel.x = this.vel.z = 0; sup = this.findSupport(ox, oz, this.pos.y + STEP); }
+      const sup = this.findSupport(this.pos.x, this.pos.z, this.pos.y + STEP);
+      // deep water: swim
+      const deep = !sup.box && WATER_LEVEL - sup.y > 1.38 && lakeE(this.pos.x, this.pos.z) < 1.3;
+      if (deep !== this.swimming) {
+        this.swimming = deep;
+        if (deep) { this.onSplash?.(this.pos, 1.0); this.vel.y *= 0.3; }
+      }
+      if (this.swimming) { this.onGround = false; this.supportBox = null; continue; }
       const top = this.col.ceilingHeight(this.pos.x, this.pos.z, RADIUS * 0.8, this.pos.y);
       if (this.pos.y + this.height > top && this.vel.y > 0) { this.vel.y = 0; this.pos.y = top - this.height; }
       if (this.pos.y <= sup.y) {
@@ -155,14 +173,21 @@ export class Player {
     // footsteps + head bob
     const hs = Math.hypot(this.vel.x, this.vel.z);
     const stepLen = running ? 1.55 : this.crouching ? 0.85 : 1.25;
+    this.speedH = hs; this.stepLen = stepLen;
+    if (this.swimming) {
+      this.swimPhase += dt * (1.6 + hs * 1.4);
+      const stroke = Math.floor(this.swimPhase / Math.PI);
+      if (stroke !== this.lastStroke) { this.lastStroke = stroke; if (hs > 0.2) this.onStroke?.(this.pos, hs); }
+    }
     if (this.onGround && hs > 0.3) this.travel += hs * dt;
     if (Math.floor(this.travel / stepLen) !== this.lastStep) {
       this.lastStep = Math.floor(this.travel / stepLen);
       this.surface = this.climbing ? 'wood' : this.surfaceAt();
       this.audio?.footstep(this.surface, tmpV.copy(this.pos), this.crouching ? 0.45 : running ? 1.3 : 0.9);
+      if (this.surface === 'water') this.onSplash?.(this.pos, 0.35 + (running ? 0.3 : 0));
     }
     const phase = (this.travel / stepLen) * Math.PI;
-    const bobAmp = s.headBob ? Math.min(1, hs / 4) * (running ? 0.05 : 0.032) : 0;
+    const bobAmp = this.swimming ? 0 : s.headBob ? Math.min(1, hs / 4) * (running ? 0.05 : 0.032) : 0;
     this.bob.x += (Math.sin(phase) * bobAmp * 0.6 - this.bob.x) * Math.min(1, dt * 12);
     this.bob.y += (-Math.abs(Math.sin(phase)) * bobAmp - this.bob.y) * Math.min(1, dt * 12);
 

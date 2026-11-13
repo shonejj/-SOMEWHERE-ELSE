@@ -24,6 +24,7 @@ export class UI {
       el.oninput = el.onchange = () => { settings[key] = el.type === 'checkbox' ? el.checked : conv(el.value); handlers.changed(key); after?.(); };
     };
     bind('opt-volume', 'volume', Number);
+    bind('opt-fps', 'maxFps', Number);
     bind('opt-sens', 'sensitivity', Number);
     bind('opt-fov', 'fov', Number);
     bind('opt-invert', 'invertY');

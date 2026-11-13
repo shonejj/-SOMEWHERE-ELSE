@@ -110,11 +110,18 @@ export class Terrain {
     const rep = TERRAIN_SIZE / 3.5;
     grass.map.repeat.set(rep, rep); grass.normalMap.repeat.set(rep, rep);
     const mat = new THREE.MeshStandardMaterial({ map: grass.map, normalMap: grass.normalMap, vertexColors: true, roughness: 0.95, metalness: 0, normalScale: new THREE.Vector2(0.9, 0.9) });
-    this.uniforms = { dirtMap: { value: dirt.map }, dirtNormal: { value: dirt.normalMap }, wet: { value: 0 } };
+    this.uniforms = { dirtMap: { value: dirt.map }, dirtNormal: { value: dirt.normalMap }, wet: { value: 0 }, uTime: { value: 0 }, uRain: { value: 0 }, uWL: { value: WATER_LEVEL }, uDay: { value: 1 } };
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, this.uniforms);
-      sh.vertexShader = 'attribute float aPath;\nvarying float vPath;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvPath = aPath;');
-      sh.fragmentShader = 'uniform sampler2D dirtMap;\nuniform sampler2D dirtNormal;\nuniform float wet;\nvarying float vPath;\nfloat gDirtBlend;\n' + sh.fragmentShader
+      sh.vertexShader = 'attribute float aPath;\nvarying float vPath;\nvarying vec3 vWPos;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvPath = aPath;\nvWPos = (modelMatrix * vec4(position, 1.0)).xyz;');
+      sh.fragmentShader = `uniform sampler2D dirtMap; uniform sampler2D dirtNormal; uniform float wet; uniform float uTime; uniform float uRain; uniform float uWL; uniform float uDay;
+varying float vPath; varying vec3 vWPos; float gDirtBlend; float gPuddle;
+float th21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float tvn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(th21(i), th21(i + vec2(1, 0)), f.x), mix(th21(i + vec2(0, 1)), th21(i + vec2(1, 1)), f.x), f.y); }
+vec2 tRings(vec2 p, float t){ vec2 n = vec2(0.0); for (int L = 0; L < 2; L++){ vec2 g = p * 3.0 + float(L) * 11.0; vec2 id = floor(g); vec2 f = fract(g) - 0.5;
+  float r = th21(id); if (r > uRain) continue; float ph = fract(t * (0.9 + r * 0.5) + r * 9.0); vec2 c = (vec2(th21(id + 2.0), th21(id + 5.0)) - 0.5) * 0.5;
+  vec2 d = f - c; float dl = length(d); float w = dl - ph * 0.4; n += d / max(dl, 1e-3) * exp(-w * w * 800.0) * (1.0 - ph) * sin(w * 80.0); } return n; }
+` + sh.fragmentShader
         .replace('#include <map_fragment>', `
           vec4 gC = texture2D(map, vMapUv);
           vec4 dC = texture2D(dirtMap, vMapUv * 1.3);
@@ -122,13 +129,27 @@ export class Terrain {
           vec4 sampledDiffuseColor = mix(gC, dC, gDirtBlend);
           diffuseColor *= sampledDiffuseColor;
           diffuseColor.rgb *= 1.0 - wet * (0.22 + gDirtBlend * 0.18);
+          // puddles collect in hollows of trails and mud when it has rained
+          float pn = tvn(vWPos.xz * 0.45) * 0.65 + tvn(vWPos.xz * 1.7) * 0.35;
+          gPuddle = smoothstep(0.58, 0.66, pn) * smoothstep(0.35, 0.75, gDirtBlend) * smoothstep(0.35, 0.8, wet) * step(uWL + 0.05, vWPos.y);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.45 + vec3(0.01, 0.012, 0.015), gPuddle);
+          // under water: lake-bed tint by depth + moving caustics
+          float uw = uWL - vWPos.y;
+          if (uw > 0.0) {
+            vec2 cp = vWPos.xz * 0.9;
+            float ca = abs(sin(cp.x * 2.1 + uTime * 0.9 + sin(cp.y * 1.7 + uTime * 0.6) * 1.6) * sin(cp.y * 2.3 - uTime * 0.7 + sin(cp.x * 1.3 - uTime * 0.5) * 1.4));
+            float caust = pow(ca, 6.0) * exp(-uw * 0.9) * uDay;
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.13, 0.2, 0.17) * diffuseColor.rgb * 3.0, smoothstep(0.0, 2.5, uw) * 0.7);
+            diffuseColor.rgb += vec3(0.5, 0.6, 0.45) * caust * 0.35;
+          }
         `)
         .replace('#include <normal_fragment_maps>', `
           vec3 mapN = mix(texture2D(normalMap, vNormalMapUv).xyz, texture2D(dirtNormal, vNormalMapUv * 1.3).xyz, gDirtBlend) * 2.0 - 1.0;
-          mapN.xy *= normalScale;
+          mapN.xy *= normalScale * (1.0 - gPuddle);
+          mapN.xy += tRings(vWPos.xz, uTime) * gPuddle * 0.8;
           normal = normalize( tbn * mapN );
         `)
-        .replace('#include <roughnessmap_fragment>', `float roughnessFactor = roughness - wet * (0.25 + gDirtBlend * 0.35);`);
+        .replace('#include <roughnessmap_fragment>', `float roughnessFactor = mix(roughness - wet * (0.25 + gDirtBlend * 0.35), 0.04, gPuddle);`);
     };
     mat.customProgramCacheKey = () => 'terrain';
     const mesh = (this.mesh = new THREE.Mesh(geo, mat));

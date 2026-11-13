@@ -279,16 +279,6 @@ export class Wildlife {
     this.flyU.uAmount.value += (flyTarget - this.flyU.uAmount.value) * Math.min(1, dt * 0.3);
     this.flies.visible = this.flyU.uAmount.value > 0.01;
 
-    // ------------------------------------------------ rain on the lake
-    const nearLake = lakeE(pp.x, pp.z) < 1.8;
-    if (nearLake && w.rain > 0.05) {
-      const count = w.rain * 40 * dt;
-      for (let i = 0; i < count + (rnd() < count % 1 ? 1 : 0); i++) {
-        const a = rnd() * 6.28, r = 1 + rnd() * 18;
-        const x = pp.x + Math.cos(a) * r, z = pp.z + Math.sin(a) * r;
-        if (lakeE(x, z) < 0.98 && this.h(x, z) < WATER_LEVEL - 0.05) this.ring(x, z, 0.12 + rnd() * 0.1, 0.4);
-      }
-    }
     for (const r of this.rings) {
       if (r.life <= 0) continue;
       r.life -= dt * 1.2;
@@ -311,11 +301,11 @@ export class Wildlife {
     if (this.fishJump) {
       const f = this.fishJump; f.t += dt;
       const k = f.t / 0.7;
-      if (f.t === dt) { this.ring(f.x, f.z, 0.5, 0.7); audio?.splash(new THREE.Vector3(f.x, WATER_LEVEL, f.z), 0.5); }
+      if (f.t === dt) { this.ring(f.x, f.z, 0.5, 0.7); this.ctx.splashes?.burst({ x: f.x, z: f.z }, 0.6, 14); audio?.splash(new THREE.Vector3(f.x, WATER_LEVEL, f.z), 0.5); }
       this.fish.visible = k < 1;
       this.fish.position.set(f.x + Math.sin(f.yaw) * k * 0.8, WATER_LEVEL + Math.sin(k * Math.PI) * 0.6, f.z + Math.cos(f.yaw) * k * 0.8);
       this.fish.rotation.set(-Math.cos(k * Math.PI) * 1.0, f.yaw, 0);
-      if (k >= 1) { this.ring(this.fish.position.x, this.fish.position.z, 0.6, 0.7); audio?.splash(this.fish.position, 0.6); this.fishJump = null; this.fish.visible = false; }
+      if (k >= 1) { this.ring(this.fish.position.x, this.fish.position.z, 0.6, 0.7); this.ctx.splashes?.burst(this.fish.position, 0.8, 18); audio?.splash(this.fish.position, 0.6); this.fishJump = null; this.fish.visible = false; }
     }
   }
 

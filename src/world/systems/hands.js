@@ -145,7 +145,18 @@ export class Hands {
     const sway = Math.sin(this.t * 1.3) * 0.004;
     let rPos, rRot, rPose = 'relaxed', lPos = new THREE.Vector3(-0.26, -0.7, -0.32), lRot = [0.2, 0.2, 0.3], lPose = 'relaxed';
 
-    if (s.mode === 'seat' || s.mode === 'scope') {
+    if (s.swim) {
+      // breaststroke: glide forward, sweep out, pull in, extend
+      const c = ((s.swimPhase / (Math.PI * 2)) % 1 + 1) % 1;
+      const key = [[0, 0.07, -0.15, -0.56], [0.35, 0.34, -0.21, -0.42], [0.6, 0.11, -0.24, -0.26], [1, 0.07, -0.15, -0.56]];
+      let i = 0; while (c > key[i + 1][0]) i++;
+      const a = key[i], b = key[i + 1], f = ease((c - a[0]) / (b[0] - a[0]));
+      const x = a[1] + (b[1] - a[1]) * f, y = a[2] + (b[2] - a[2]) * f, z = a[3] + (b[3] - a[3]) * f;
+      const outward = i === 0 ? 1 : 0;
+      rPos = new THREE.Vector3(x, y, z); lPos = new THREE.Vector3(-x, y, z);
+      rRot = [-0.15, 0.1, -0.4 - outward * 0.5]; lRot = [-0.15, 0.1, -0.4 - outward * 0.5];
+      rPose = 'open'; lPose = 'open';
+    } else if (s.mode === 'seat' || s.mode === 'scope') {
       rPos = new THREE.Vector3(0.26, -0.75, -0.3); rRot = [0, 0, 0];
     } else if (s.held) {
       const it = s.held, m = it.mesh, sz = Math.min(0.5, it.size);
@@ -173,7 +184,7 @@ export class Hands {
     } else {
       rPos = new THREE.Vector3(0.25, -0.66, -0.32); rRot = [0.2, 0.15, -0.3];
     }
-    if (!s.held && !this.reachState) { rPos.x += bobX; rPos.y += bobY + sway; lPos.x += bobX; lPos.y += bobY; }
+    if (!s.held && !this.reachState && !s.swim) { rPos.x += bobX; rPos.y += bobY + sway; lPos.x += bobX; lPos.y += bobY; }
 
     for (const [h, pos, rot, pose] of [[R, rPos, rRot, rPose], [L, lPos, lRot, lPose]]) {
       const isL = h === L;

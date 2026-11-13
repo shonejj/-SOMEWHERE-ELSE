@@ -137,6 +137,29 @@ export function knit(size, base = [0.2, 0.27, 0.22]) {
   }, 3.0);
 }
 
+export function denim(size) {
+  return generate(size, (u, v, o) => {
+    const tw = Math.sin((u * 160 + v * 160) * Math.PI) * 0.5 + 0.5; // 2/1 twill diagonal
+    const n = fbm2(u * 12, v * 40, 3, 12, 40);
+    const fade = fbm2(u * 3, v * 3, 3, 3, 3) * 0.5 + 0.5;
+    const slub = fbm2(u * 200, v * 8, 2, 200, 8);
+    const k = 0.72 + tw * 0.18 + n * 0.12 + fade * 0.2 + slub * 0.08;
+    o.r = 0.17 * k + fade * 0.05; o.g = 0.24 * k + fade * 0.05; o.b = 0.38 * k + fade * 0.05;
+    o.h = tw * 0.6 + n * 0.2;
+  }, 1.4);
+}
+
+export function leather(size) {
+  return generate(size, (u, v, o) => {
+    const [f1, f2] = worley2(u * 40, v * 40, 40);
+    const grain = smoothstep(0.0, 0.12, f2 - f1);
+    const n = fbm2(u * 6, v * 6, 4, 6, 6);
+    const k = 0.75 + n * 0.25 + grain * 0.1;
+    o.r = 0.32 * k; o.g = 0.2 * k; o.b = 0.12 * k;
+    o.h = grain * 0.4 + n * 0.3;
+  }, 2.0);
+}
+
 export function woodGrain(size, base = [0.55, 0.38, 0.24]) {
   // continuous furniture-grade grain running along v
   return generate(size, (u, v, o) => {
@@ -178,7 +201,7 @@ export function stone(size, scale = 5, warm = 0) {
     const mortar = smoothstep(0.03, 0.09, edge);
     const n = fbm2(u * 32, v * 32, 4, 32, 32);
     const h = hash(id);
-    const tone = 0.42 + h * 0.3 + n * 0.12;
+    const tone = 0.34 + h * 0.28 + n * 0.1;
     const tint = hash(id + 3);
     o.r = tone * (0.95 + tint * 0.1 + warm * 0.12); o.g = tone * (0.93 + warm * 0.04); o.b = tone * (0.9 - warm * 0.08 + (1 - tint) * 0.06);
     const m = 1 - mortar;
@@ -438,6 +461,8 @@ export async function buildTextures(quality, onProgress) {
     ['grain', () => woodGrain(half)],
     ['skin', () => skin(256)],
     ['knit', () => knit(256)],
+    ['denim', () => denim(256)],
+    ['leather', () => leather(256)],
     ['logs', () => logWood(S)],
     ['bark', () => bark(half)],
     ['birch', () => bark(half, true)],

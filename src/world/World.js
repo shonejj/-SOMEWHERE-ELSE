@@ -1,7 +1,7 @@
 // SOMEWHERE ELSE — world bootstrap and main loop.
 import * as THREE from 'three';
 import { PRESETS, saveSettings, isTouch } from './core/settings.js';
-import { WATER_LEVEL, LAKE, PLACES, FLOOR } from './core/layout.js';
+import { WATER_LEVEL, LAKE, PLACES, FLOOR, TREEHOUSE } from './core/layout.js';
 import { buildTextures } from './core/textures.js';
 import { Terrain, lakeE } from './env/terrain.js';
 import { SkySystem } from './env/sky.js';
@@ -25,6 +25,9 @@ import { Wildlife } from './systems/wildlife.js';
 import { Radio } from './systems/radio.js';
 import { UI } from './systems/ui.js';
 import { Hands } from './systems/hands.js';
+import { Body } from './systems/body.js';
+import { Splashes } from './systems/splashes.js';
+import { glassRain, glassTime } from './build/kit.js';
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 
@@ -43,6 +46,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = preset.shadows;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.autoUpdate = false;
   renderer.domElement.id = 'world-canvas';
   container.insertBefore(renderer.domElement, container.firstChild); // UI overlays must stay above the canvas
 
@@ -61,9 +65,15 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   const colliders = new Colliders();
   const physics = new Physics();
   const sky = new SkySystem(scene, renderer, preset);
+  // roof surfaces (rain splashes land on them too)
+  const roofAt = (x, z) => {
+    if (Math.abs(x) < 6.7 && Math.abs(z) < 4.1) return FLOOR + 5.0 - Math.abs(z) * (2.0 / 3.5) + 0.26;
+    if (x > -6.5 && x < 2.8 && z >= 4.1 && z < 6.6) return FLOOR + 2.46 - (z - 5.1) * 0.14 + 0.08;
+    return null;
+  };
   const groundQuery = (x, z, camY) => {
-    const roof = (Math.abs(x) < 6.8 && Math.abs(z) < 4.2) || (x > -6.5 && x < 2.8 && z > 3.5 && z < 6.6);
-    if (roof) return null;
+    const roof = roofAt(x, z);
+    if (roof !== null) return roof;
     const t = terrain.heightAt(x, z);
     const s = colliders.supportHeight(x, z, 0.01, camY + 0.5);
     const y = Math.max(t, s);
@@ -72,14 +82,21 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   const weather = new Weather(scene, preset, groundQuery);
   weather.setMode(settings.weather);
   progress(0.58, 'Filling the lake'); await nextFrame();
-  const lake = new Lake(scene, preset, T);
+  const lake = new Lake(scene, preset, T, terrain);
   progress(0.62, 'Growing the forest'); await nextFrame();
-  const veg = new Vegetation(scene, preset, T, terrain, colliders);
+  const veg = new Vegetation(scene, preset, T, terrain, colliders, renderer);
   const grass = new GrassField(scene, preset, terrain);
+  const splashes = new Splashes(scene, preset.key === 'low' ? 300 : 700);
   if (lake.reflective) {
-    // keep the lake's mirror pass cheap: skip the dense grass while it renders
+    // keep the lake's mirror pass cheap: skip grass and particles, refresh every other frame
     const orig = lake.mesh.onBeforeRender;
-    lake.mesh.onBeforeRender = function (...args) { grass.mesh.visible = false; orig.apply(this, args); grass.mesh.visible = true; };
+    let tick = 0;
+    lake.mesh.onBeforeRender = function (...args) {
+      if ((tick++ & 1) && preset.key !== 'ultra') return;
+      grass.setVisible(false); splashes.points.visible = false; weather.rain.visible = false;
+      orig.apply(this, args);
+      grass.setVisible(true); splashes.points.visible = true; weather.rain.visible = weather.w.rain > 0.02;
+    };
   }
 
   const ui = new UI(settings, {});
@@ -87,6 +104,17 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   const player = new Player(camera, input, terrain, colliders, audio, settings);
   const ix = new Interaction({ camera, input, physics, audio, player, ui });
   const hands = new Hands(camera, T);
+  const body = new Body(scene, T);
+  sky.sun.shadow.camera.layers.enableAll();
+  player.onSplash = (p, k) => { splashes.burst(p, k, 22); audio?.splash(p.clone ? p.clone() : p, Math.min(1, 0.3 + k * 0.6)); wildlife?.splashAt(p); };
+  player.onStroke = (p, sp) => {
+    const f = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+    for (const side of [-1, 1]) splashes.burst({ x: p.x + f.x * 0.5 + f.z * side * 0.35, z: p.z + f.z * 0.5 - f.x * side * 0.35 }, 0.45, 10);
+    audio?.noiseHit(new THREE.Vector3(p.x, WATER_LEVEL, p.z), { type: 'bandpass', f: 700 + Math.random() * 500, q: 0.8, a: 0.03, d: 0.35, v: 0.22 });
+    audio?.noiseHit(new THREE.Vector3(p.x, WATER_LEVEL, p.z), { buf: audio.pink, type: 'highpass', f: 2200, a: 0.05, d: 0.3, v: 0.1 });
+    wildlife?.ring(p.x, p.z, 0.8, 0.5);
+  };
+  let wildlife = null;
   ix.hands = hands;
   if (input.touch) ix.coneAngle = 0.16;
   const clock = { hour: settings.startHour };
@@ -100,7 +128,8 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   const cabin = buildCabin(ctx);
   progress(0.8, 'Building the dock and tree house'); await nextFrame();
   buildOutdoor(ctx);
-  const wildlife = new Wildlife(ctx);
+  ctx.splashes = splashes;
+  wildlife = new Wildlife(ctx);
   // physics ground: heightfield around the inhabited area + nearby tree trunks
   physics.addTerrain(terrain, 0, 18, 150, 1);
   for (const list of colliders.cyl.values()) for (const c of list) if (Math.hypot(c.x, c.z - 18) < 75) physics.addCylinder(c);
@@ -112,7 +141,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
 
   // gentle bloom on lamps, fire and sun glints (High / Ultra)
   let composer = null;
-  if (preset.key === 'high' || preset.key === 'ultra') {
+  if (preset.bloom) {
     composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
     composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.55, 0.88));
@@ -127,7 +156,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   progress(1, 'Ready');
 
   // ------------------------------------------------------- handlers --
-  let paused = false, running = true;
+  let paused = false, running = true, pausedDrawn = false;
   const setPaused = (p) => {
     paused = p; ui.showMenu(p);
     if (audio) { if (p) audio.master.gain.setTargetAtTime(settings.volume * 0.35, audio.now, 0.2); else audio.setVolume(settings.volume); }
@@ -148,7 +177,8 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
       await ui.fade(true, 400);
       if (ix.held) ix.release(0);
       if (player.mode === 'seat') player.stand();
-      if (id === 'treehouse') player.teleport(p.pos[0], terrain.heightAt(p.pos[0], p.pos[2]) + 4.6, p.pos[2], p.yaw);
+      if (id === 'treehouse') player.teleport(p.pos[0], terrain.heightAt(TREEHOUSE.x, TREEHOUSE.z) + 4.4, p.pos[2], p.yaw);
+      else if (id === 'dock') player.teleport(p.pos[0], WATER_LEVEL + 0.65, p.pos[2], p.yaw);
       else if (['living', 'bedroom', 'porch'].includes(id)) player.teleport(p.pos[0], FLOOR, p.pos[2], p.yaw);
       else player.teleport(p.pos[0], undefined, p.pos[2], p.yaw);
       setPaused(false); if (!input.touch) input.requestLock();
@@ -179,8 +209,11 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   const frame = () => {
     if (!running) return;
     const now = performance.now();
+    const minFrame = settings.maxFps ? 1000 / settings.maxFps - 1.5 : 0;
+    if (now - last < minFrame) return; // frame-rate cap saves battery and heat
     let dt = Math.min(0.1, (now - last) / 1000); last = now;
-    if (paused) { draw(); input.endFrame(); return; }
+    if (paused) { if (!pausedDrawn) { draw(); pausedDrawn = true; } input.endFrame(); return; }
+    pausedDrawn = false;
     elapsed += dt;
 
     // time of day
@@ -194,7 +227,10 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     if (input.hit('KeyF')) player.toggleFlashlight();
     if (input.hit('Escape') && input.touch) { input.endFrame(); setPaused(true); return; }
     ix.update(dt);
-    hands.update(dt, { held: ix.held, inspecting: ix.held && (input.down('KeyR') || input.mouse.right), hover: !!ix.focus, mode: player.mode, bob: player.bob });
+    hands.update(dt, { held: ix.held, inspecting: ix.held && (input.down('KeyR') || input.mouse.right), hover: !!ix.focus && !player.swimming, mode: player.mode, bob: player.bob, swim: player.swimming, swimPhase: player.swimPhase });
+    body.update(dt, { pos: player.pos, yaw: player.yaw, pitch: player.pitch, mode: player.mode, seat: player.seat, camera, speed: player.speedH, running: player.speedH > 3,
+      crouch: Math.max(0, Math.min(1, (1.72 - player.height) / 0.6)), onGround: player.onGround, travel: player.travel, stepLen: player.stepLen,
+      swim: player.swimming, swimPhase: player.swimPhase, waterY: WATER_LEVEL, climbing: player.climbing, handsActive: hands.R.root.visible });
     physics.step(dt);
     for (const it of physics.items) {
       if (it.held) continue;
@@ -202,7 +238,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
       const inLake = y < WATER_LEVEL && lakeE(it.body.position.x, it.body.position.z) < 1.05;
       if (inLake && it.wasAbove) {
         const v = it.body.velocity, hs = Math.hypot(v.x, v.z);
-        wildlife.splashAt(it.body.position);
+        wildlife.splashAt(it.body.position); splashes.burst(it.body.position, Math.min(1.2, 0.4 + Math.hypot(it.body.velocity.x, it.body.velocity.y, it.body.velocity.z) * 0.12), 16);
         if (it.skimmer && hs > 4 && -v.y < hs * 0.6) {
           v.y = Math.abs(v.y) * 0.55 + 0.6; v.x *= 0.8; v.z *= 0.8; it.body.position.y = WATER_LEVEL + 0.02;
           audio?.noiseHit(it.mesh.position, { type: 'bandpass', f: 1800, q: 1, d: 0.08, v: 0.25, ref: 4 });
@@ -217,7 +253,23 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     sky.update(dt, clock.hour, weather.w, focus, elapsed);
     weather.update(dt, elapsed, camera, sky);
     lake.update(dt, elapsed, sky, weather);
-    veg.update(elapsed, weather);
+    veg.update(elapsed, weather, camera.position);
+    splashes.update(dt, sky.sun.color.clone().multiplyScalar(0.25 + sky.state.daylight * 0.7));
+    glassRain.value = weather.w.rain; glassTime.value = elapsed;
+    terrain.uniforms.uTime.value = elapsed; terrain.uniforms.uRain.value = weather.w.rain; terrain.uniforms.uDay.value = sky.state.daylight;
+    // water dripping off the eaves when it rains
+    if (weather.w.rain > 0.12 && camera.position.distanceToSquared(tmp.set(0, 2, 2)) < 900) {
+      const n = weather.w.rain * 30 * dt;
+      for (let i = 0; i < n + (Math.random() < n % 1 ? 1 : 0); i++) {
+        const e = Math.random();
+        let x, z, y;
+        if (e < 0.4) { x = -6.6 + Math.random() * 13.2; z = -4.12; y = FLOOR + 2.66; }
+        else if (e < 0.6) { x = 2.85 + Math.random() * 3.8; z = 4.12; y = FLOOR + 2.66; }
+        else { x = -6.4 + Math.random() * 9.1; z = 6.62; y = FLOOR + 2.18; }
+        const floorY = Math.max(terrain.heightAt(x, z), colliders.supportHeight(x, z, 0.01, y - 0.3));
+        splashes.drip(x, y, z, floorY);
+      }
+    }
     wildlife.update(dt, elapsed, player, sky, weather, audio);
     terrain.uniforms.wet.value = weather.w.wet;
     for (const m of [M.deck, M.shingles]) m.roughness = 0.85 - weather.w.wet * 0.4;
@@ -244,6 +296,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     }
 
     grass.update(camera);
+    renderer.shadowMap.needsUpdate = frames % preset.shadowEvery === 0;
     draw();
     input.endFrame();
 
