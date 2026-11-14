@@ -10,6 +10,25 @@ There are no quests, no enemies, no scores, no timers and no objectives. Just a 
 
 ## What's there
 
+Two places to be — choose one on the landing page (**Where to**) or travel between them from the pause menu (**Journeys**):
+
+- **Pine Lake** — a log cabin in a rainy pine forest by a big lake, with a dock, a tree house and a campfire clearing.
+- **Maple Hollow** — an autumn valley of red and gold maples, ginkgo and swaying bamboo: a tea house with tatami, a sunken hearth and sliding paper screens; a steaming hot spring; a koi pond under an arched vermilion bridge; stone lanterns that glow at night; a moon-viewing deck with a telescope; and a rope swing under a maple.
+
+### Maple Hollow
+
+| Place | What you can do |
+|---|---|
+| **Tea room** | Light the sunken hearth, **brew tea** in the hanging iron kettle (steam, a singing kettle, warm cups appear on the low table), sit cross-legged on cushions, lie on the futon, slide the paper doors, open the tansu drawers, light paper lanterns, switch the woven ceiling lamp |
+| **Veranda** | Ring the glass wind bell, light the hanging red lantern, carry the bamboo broom; a bamboo water-clapper by the stone basin fills and clacks |
+| **Hot spring** | Soak in the steaming water; wooden bucket and towel |
+| **Koi bridge** | Scatter food and watch the koi gather and splash |
+| **Bamboo grove** | Sit on a log among the swaying bamboo |
+| **Moon-viewing deck** | Sit and watch the sky, or zoom the telescope on the moon and stars |
+| **Maple swing** | A rope swing that swings higher the longer you sit |
+
+### Pine Lake
+
 **Places** (walk between them along the trails, or use *Go to* in the pause menu)
 
 | Place | What you can do |
@@ -24,6 +43,12 @@ There are no quests, no enemies, no scores, no timers and no objectives. Just a 
 
 **You**
 
+- **First- or third-person** (V, or the View button): the third-person camera orbits behind your shoulder and pulls in so it never goes through walls; when you lie down it rises above you so you see yourself resting.
+- **Pocket music player** (M, or ♪): eight original lo-fi tracks composed live in your browser — FM electric piano, upright bass, swung drums, vibraphone / plucked guitar / soft lead melodies, warm pads, vinyl crackle, tape wobble and reverb — with an optional rain-and-birds nature layer. It plays "in your ears", unaffected by where you are; you can see it in your hand while it's out.
+- **Journal**: write in the notebook on the bedroom desk; entries are kept on your device. The nightstand drawer holds a letter you can read.
+- **Guitar**: pick it up and click (or tap Strum) to play chords.
+- **Diving**: while swimming, C dives down to the lake bed (fish, bubbles, a bright window to the sky overhead, muffled sound); Space surfaces. Light things float and bob; stones sink.
+
 - **A full body built in code**: knitted sweater, belt, jeans and leather boots. Look down and you see yourself; your shadow walks, runs, crouches and sits with you. Legs use two-bone IK (walking and running gaits, crouching, sitting with knees bent, climbing the ladder), arms swing in opposition and hand over to the first-person hands when you reach for something.
 - **Swimming**: wade into the lake and, once it's deeper than your chest, you float and swim (breaststroke hands in view, Shift to swim faster, Space to kick up). Feet, strokes, dives and thrown objects throw up water droplets and ripples.
 - **First-person hands** with jointed fingers, skin and knitted sleeves. They stay out of the way until you look at something usable, then reach out: a pointing finger for switches, lamps and the radio, an open palm to push doors, windows and drawers, a grip to pick things up. Carried objects sit in your hand, and when you inspect something both hands come up to turn it over.
@@ -37,7 +62,7 @@ There are no quests, no enemies, no scores, no timers and no objectives. Just a 
 - A clear lake: you can see the lake bed (with moving caustics) through shallow water, which deepens to dark green-blue; fresnel reflections (a true mirror reflection on High/Ultra), sun glints and a soft foam line at the shore.
 - Lush, wind-driven nature: a dense GPU grass field that surrounds you wherever you walk, pines, birch and broadleaf oaks, bushes along the forest edges, ferns, thousands of wildflowers, reeds and cattails at the water's edge, lily pads (some flowering), mushrooms at the feet of trees, fallen mossy logs and stumps, moss on the tops of rocks, and leaves drifting on the wind.
 - Curtains billow when a window is open.
-- Wildlife: deer (graze, look up, bolt if you rush them — crouch to get closer), a flock of birds, butterflies over the meadow, dragonflies darting along the shore, ducks, jumping fish, fireflies on dry nights, bird song, owls, crickets and frogs.
+- Wildlife: deer — does and an antlered buck — (graze, look up, bolt if you rush them — crouch to get closer), rabbits that nibble and hop away, a school of fish in the lake, koi in the hollow, mallards that tip forward to dabble, a flock of birds, butterflies over the meadow, dragonflies darting along the shore, ducks, jumping fish, fireflies on dry nights, bird song, owls, frogs and — only on dry nights — the odd cricket.
 - Fully positional, procedurally synthesised sound. Indoors the rain becomes a muffled drum on the roof — opening windows and doors lets it back in.
 - Physics: everything loose can be picked up, inspected (rotate it in your hands), dropped or thrown; it collides, tumbles, clatters and splashes with material-specific sounds.
 
@@ -54,6 +79,10 @@ There are no quests, no enemies, no scores, no timers and no objectives. Just a 
 | Hold `R` or right mouse | inspect (mouse rotates the object) |
 | `Q` | drop |
 | `F` | torch |
+| `V` | first / third person |
+| `M` | music player |
+| `C` (swimming) / `Space` | dive / surface |
+| Scroll (telescope) | zoom |
 | `Esc` | pause · settings · places |
 
 **Touch** (phones and tablets, detected automatically; also enabled the first time you touch the screen on a touch laptop): drag on the left half to walk, drag on the right half to look, **tap** anything to use it. On-screen buttons: Use, Jump, Crouch, Run, Torch, and Throw / Inspect / Drop while holding something. ☰ opens the menu.

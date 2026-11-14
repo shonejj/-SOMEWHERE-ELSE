@@ -163,11 +163,12 @@ export class Body {
 
     if (s.mode === 'seat') {
       const eye = s.eye;
-      const floorY = eye.y - 1.12;
+      const low = !!s.seat?.low;
+      const floorY = eye.y - (low ? 0.86 : 1.12);
       root.position.set(eye.x + sinY * 0.12, floorY, eye.z + cosY * 0.12);
-      this.pelvis.position.y = 0.5; this.pelvis.rotation.x = 0;
-      this.spine.rotation.x = -0.12;
-      for (const L of this.legs) this.solveLeg(L, 0.48, 0.5 - 0.02, 0.05);
+      this.pelvis.position.y = low ? 0.16 : 0.5; this.pelvis.rotation.x = 0;
+      this.spine.rotation.x = low ? 0.05 : -0.12;
+      for (const L of this.legs) { if (low) { this.solveLeg(L, 0.4, 0.05, 0.95); L.knee.rotation.z = 0; } else this.solveLeg(L, 0.48, 0.5 - 0.02, 0.05); }
       for (const A of this.arms) { A.sh.rotation.set(0.55, 0, A.side * 0.15); A.el.rotation.x = 0.9; A.wr.rotation.x = 0; }
       this.armsVisible(!s.handsActive);
       return;

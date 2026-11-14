@@ -1,7 +1,7 @@
 // Living things: deer, birds, ducks, fish, fireflies and rain rings on the lake.
 import * as THREE from 'three';
 import { mulberry32 } from '../core/noise.js';
-import { WATER_LEVEL, LAKE, CABIN, WORLD_RADIUS, DOCK } from '../core/layout.js';
+import { WATER_LEVEL, LAKE, CABIN, WORLD_RADIUS, DOCK, REGION } from '../core/layout.js';
 import { lakeE, forestDensity } from '../env/terrain.js';
 import { deerModel, duckModel, rabbitModel, fishSchool } from './creatures.js';
 
@@ -40,7 +40,7 @@ export class Wildlife {
     this.flockT = 0; this.flockAlt = 0;
     // ducks
     this.ducks = [];
-    for (let i = 0; i < 4; i++) { const d = duckModel(i % 2 === 0); scene.add(d); this.ducks.push({ m: d, a: rnd() * 6, r: 6 + rnd() * 8, c: new THREE.Vector2(DOCK.x + 6 + i * 3, 40 + i * 4), sp: 0.04 + rnd() * 0.03, quack: 8 + rnd() * 20 }); }
+    for (let i = 0; i < 4; i++) { const d = duckModel(i % 2 === 0); scene.add(d); this.ducks.push({ m: d, a: rnd() * 6, r: Math.min(LAKE.rx, LAKE.rz) * (0.3 + rnd() * 0.25), c: new THREE.Vector2(LAKE.x + (i - 1.5) * LAKE.rx * 0.15, LAKE.z + (i % 2 ? 0.15 : -0.1) * LAKE.rz), sp: 0.04 + rnd() * 0.03, quack: 8 + rnd() * 20 }); }
     // fireflies
     const n = 140, seeds = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
@@ -80,8 +80,12 @@ export class Wildlife {
       this.rabbits.push({ m, pos: new THREE.Vector3(x, 0, z), yaw: rnd() * 6, t: rnd() * 3, hop: 0, hopping: false, flee: 0, target: new THREE.Vector3(x, 0, z) });
     }
     // a school of fish in the lake
-    this.fish = fishSchool(scene, 36, ctx.T);
-    this.fishData = Array.from({ length: 36 }, (_, i) => ({ a: rnd() * 6.28, r: 4 + rnd() * 18, c: new THREE.Vector2(LAKE.x + (rnd() - 0.5) * 30, LAKE.z + (rnd() - 0.5) * 20), d: 0.6 + rnd() * 2.2, sp: (0.25 + rnd() * 0.35) * (rnd() < 0.5 ? 1 : -1) }));
+    this.koi = REGION.id === 'hollow';
+    const nf = this.koi ? 22 : 36;
+    this.fish = fishSchool(scene, nf, ctx.T, this.koi);
+    const span = Math.min(LAKE.rx, LAKE.rz);
+    this.fishData = Array.from({ length: nf }, (_, i) => ({ a: rnd() * 6.28, r: span * (0.15 + rnd() * 0.45), c: new THREE.Vector2(LAKE.x + (rnd() - 0.5) * LAKE.rx * 0.6, LAKE.z + (rnd() - 0.5) * LAKE.rz * 0.6), d: this.koi ? 0.25 + rnd() * 0.7 : 0.6 + rnd() * 2.2, sp: (0.25 + rnd() * 0.35) * (rnd() < 0.5 ? 1 : -1), x: 0, z: 0 }));
+    this.feedAt = null;
     this.fishM = new THREE.Matrix4(); this.fishQ = new THREE.Quaternion(); this.fishS = new THREE.Vector3(1, 1, 1);
     // butterflies over the meadow
     const wingG = new THREE.BufferGeometry();
@@ -280,16 +284,19 @@ export class Wildlife {
   }
 
   updateSmall(dt, t, pp, day, w) {
+    this.t = t;
     // fish
     this.fish.u.uTime.value = t;
     this.fishData.forEach((f, i) => {
       f.a += dt * f.sp / Math.max(2, f.r) * 2;
-      const x = f.c.x + Math.cos(f.a) * f.r, z = f.c.y + Math.sin(f.a) * f.r * 0.7;
+      let x = f.c.x + Math.cos(f.a) * f.r, z = f.c.y + Math.sin(f.a) * f.r * 0.7;
+      if (this.feedAt && t < this.feedAt.until) { const k = Math.min(1, (t - this.feedAt.t0) * 0.25); x += (this.feedAt.p.x + Math.cos(f.a * 3) * 0.9 - x) * k; z += (this.feedAt.p.z + Math.sin(f.a * 3) * 0.9 - z) * k; if (rnd() < dt * 0.4) { this.ring(x, z, 0.2, 0.5); this.ctx.splashes?.burst({ x, z }, 0.25, 4); } }
+      if (this.koi) { f.x += (x - f.x) * Math.min(1, dt * 2); f.z += (z - f.z) * Math.min(1, dt * 2); x = f.x; z = f.z; }
       const floor = this.h(x, z);
       const y = Math.max(floor + 0.25, WATER_LEVEL - f.d) + Math.sin(t * 0.7 + i) * 0.08;
       const tx = -Math.sin(f.a) * Math.sign(f.sp), tz = Math.cos(f.a) * 0.7 * Math.sign(f.sp);
       this.fishQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(-tx, -tz) + Math.PI);
-      this.fishS.setScalar(0.8 + (i % 5) * 0.15);
+      this.fishS.setScalar((this.koi ? 1.9 : 0.8) + (i % 5) * 0.15);
       this.fishM.compose(new THREE.Vector3(x, floor > WATER_LEVEL - 0.4 ? -50 : y, z), this.fishQ, this.fishS);
       this.fish.mesh.setMatrixAt(i, this.fishM);
     });
@@ -350,6 +357,8 @@ export class Wildlife {
     this.leafU.uCam.value.copy(pp); this.leafU.uTime.value = t; this.leafU.uWind.value = w.gust;
     this.leafU.uAmount.value = 0.15 + w.gust * 0.6;
   }
+
+  feed(p) { this.feedAt = { p: p.clone(), t0: this.t || 0, until: (this.t || 0) + 14 }; }
 
   /** Splash rings for thrown objects landing in the lake. */
   splashAt(p) { this.ring(p.x, p.z, 0.4, 0.7); }

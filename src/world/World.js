@@ -1,9 +1,9 @@
 // SOMEWHERE ELSE — world bootstrap and main loop.
 import * as THREE from 'three';
 import { PRESETS, saveSettings, isTouch } from './core/settings.js';
-import { WATER_LEVEL, LAKE, PLACES, FLOOR, TREEHOUSE } from './core/layout.js';
+import { WATER_LEVEL, LAKE, PLACES, FLOOR, TREEHOUSE, REGION, applyRegion } from './core/layout.js';
 import { buildTextures } from './core/textures.js';
-import { Terrain, lakeE } from './env/terrain.js';
+import { Terrain, lakeE, initTerrainData } from './env/terrain.js';
 import { SkySystem } from './env/sky.js';
 import { Weather } from './env/weather.js';
 import { Lake } from './env/water.js';
@@ -15,6 +15,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { makeMaterials } from './build/kit.js';
 import { buildCabin } from './build/cabin.js';
+import { buildHollow } from './build/hollow.js';
 import { buildOutdoor } from './build/outdoor.js';
 import { Colliders } from './systems/colliders.js';
 import { Physics } from './systems/physics.js';
@@ -35,6 +36,9 @@ const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 
 export async function startWorld({ container, settings, audio, onProgress, onExit }) {
   const preset = PRESETS[settings.quality];
+  applyRegion(settings.region || 'pines'); initTerrainData();
+  const hollow = REGION.id === 'hollow';
+  let site = { roofs: [], indoor: () => false, openness: () => 0, eaves: [] };
   const progress = (p, label) => onProgress?.(p, label);
   progress(0.02, 'Waking the renderer');
 
@@ -69,8 +73,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   const sky = new SkySystem(scene, renderer, preset);
   // roof surfaces (rain splashes land on them too)
   const roofAt = (x, z) => {
-    if (Math.abs(x) < 6.7 && Math.abs(z) < 4.1) return FLOOR + 5.0 - Math.abs(z) * (2.0 / 3.5) + 0.26;
-    if (x > -6.5 && x < 2.8 && z >= 4.1 && z < 6.6) return FLOOR + 2.46 - (z - 5.1) * 0.14 + 0.08;
+    for (const r of site.roofs) if (x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1) return r.y(x, z);
     return null;
   };
   const groundQuery = (x, z, camY) => {
@@ -128,20 +131,36 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     rockMat: veg.rockMat,
     makeRadio: (pos) => (audio ? new Radio(audio, pos) : null),
   };
-  progress(0.72, 'Raising the cabin'); await nextFrame();
-  const cabin = buildCabin(ctx);
-  progress(0.8, 'Building the dock and tree house'); await nextFrame();
+  ctx.sky = sky;
+  progress(0.72, hollow ? 'Raising the tea house' : 'Raising the cabin'); await nextFrame();
+  if (hollow) {
+    site = buildHollow(ctx);
+  } else {
+    const cabin = buildCabin(ctx);
+    progress(0.8, 'Building the dock and tree house'); await nextFrame();
+    buildOutdoor(ctx);
+    site = {
+      indoor: cabin.indoor, openness: cabin.openness, placeY: {},
+      roofs: [
+        { x0: -6.7, x1: 6.7, z0: -4.1, z1: 4.1, y: (x, z) => FLOOR + 5.0 - Math.abs(z) * (2.0 / 3.5) + 0.26 },
+        { x0: -6.5, x1: 2.8, z0: 4.1, z1: 6.6, y: (x, z) => FLOOR + 2.46 - (z - 5.1) * 0.14 + 0.08 },
+      ],
+      rainRects: [[-6.8, -4.2, 6.8, 4.2, 5.9], [-6.5, 3.5, 2.8, 6.6, 3.3]],
+      eaves: [[-6.6, -4.12, 6.6, -4.12, FLOOR + 2.66], [2.85, 4.12, 6.65, 4.12, FLOOR + 2.66], [-6.4, 6.62, 2.7, 6.62, FLOOR + 2.18]],
+    };
+  }
   player.occluders = ix.occluders;
-  buildOutdoor(ctx);
+  { const [a, b] = site.rainRects; weather.rainU.uRoof.value.set(a[0], a[1], a[2], a[3]); weather.rainU.uRoofY.value = a[4]; weather.rainU.uRoof2.value.set(b[0], b[1], b[2], b[3]); weather.rainU.uRoof2Y.value = b[4]; }
   ctx.splashes = splashes;
   wildlife = new Wildlife(ctx);
+  ctx.koiFeed = (p) => wildlife.feed(p);
   // physics ground: heightfield around the inhabited area + nearby tree trunks
   physics.addTerrain(terrain, 0, 18, 150, 1);
   for (const list of colliders.cyl.values()) for (const c of list) if (Math.hypot(c.x, c.z - 18) < 75) physics.addCylinder(c);
   physics.onImpact = (it, v) => audio?.impact(it, v);
 
   // ------------------------------------------------------- start pose --
-  player.teleport(-1.6, undefined, 11.5, 0.05);
+  if (hollow) player.teleport(1.2, undefined, 13.5, 0.15); else player.teleport(-1.6, undefined, 11.5, 0.05);
   player.pitch = 0.02;
 
   // gentle bloom on lamps, fire and sun glints (High / Ultra)
@@ -200,6 +219,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   }
   Object.assign(ui.h, {
     hour: () => clock.hour,
+    journey: (id) => { if (id === REGION.id) return; settings.region = id; saveSettings(settings); try { sessionStorage.setItem('se-autoenter', '1'); } catch (e) { /* ignore */ } ui.fade(true, 600).then(() => location.reload()); },
     overlay: (on) => { overlay = on; input.enabled = !on; if (on) { input.keys.clear(); input.exitLock(); } else if (!input.touch) input.requestLock(); },
     resume: () => { setPaused(false); if (!input.touch) input.requestLock(); },
     exit: () => { running = false; input.exitLock(); onExit?.(); },
@@ -218,7 +238,8 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
       if (player.mode === 'seat') player.stand();
       if (id === 'treehouse') player.teleport(p.pos[0], terrain.heightAt(TREEHOUSE.x, TREEHOUSE.z) + 4.4, p.pos[2], p.yaw);
       else if (id === 'dock') player.teleport(p.pos[0], WATER_LEVEL + 0.65, p.pos[2], p.yaw);
-      else if (['living', 'bedroom', 'porch'].includes(id)) player.teleport(p.pos[0], FLOOR, p.pos[2], p.yaw);
+      else if (site.placeY?.[id] !== undefined) player.teleport(p.pos[0], site.placeY[id], p.pos[2], p.yaw);
+      else if (['living', 'bedroom', 'porch', 'tearoom', 'veranda'].includes(id)) player.teleport(p.pos[0], FLOOR, p.pos[2], p.yaw);
       else player.teleport(p.pos[0], undefined, p.pos[2], p.yaw);
       setPaused(false); if (!input.touch) input.requestLock();
       await ui.fade(false, 700);
@@ -311,11 +332,8 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     if (weather.w.rain > 0.12 && camera.position.distanceToSquared(tmp.set(0, 2, 2)) < 900) {
       const n = weather.w.rain * 30 * dt;
       for (let i = 0; i < n + (Math.random() < n % 1 ? 1 : 0); i++) {
-        const e = Math.random();
-        let x, z, y;
-        if (e < 0.4) { x = -6.6 + Math.random() * 13.2; z = -4.12; y = FLOOR + 2.66; }
-        else if (e < 0.6) { x = 2.85 + Math.random() * 3.8; z = 4.12; y = FLOOR + 2.66; }
-        else { x = -6.4 + Math.random() * 9.1; z = 6.62; y = FLOOR + 2.18; }
+        const [ax, az, bx, bz, y] = site.eaves[Math.floor(Math.random() * site.eaves.length)];
+        const f = Math.random(), x = ax + (bx - ax) * f, z = az + (bz - az) * f;
         const floorY = Math.max(terrain.heightAt(x, z), colliders.supportHeight(x, z, 0.01, y - 0.3));
         splashes.drip(x, y, z, floorY);
       }
@@ -325,7 +343,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     for (const m of [M.deck, M.shingles]) m.roughness = 0.85 - weather.w.wet * 0.4;
 
     // exposure: let eyes adapt a little at night and indoors
-    const indoor = cabin.indoor(camera.position);
+    const indoor = site.indoor(camera.position);
     const night = sky.state.night;
     const targetExp = 0.95 + night * 0.35 + (indoor ? 0.2 : 0) - sky.state.daylight * weather.w.flash * 0.3;
     renderer.toneMappingExposure += (targetExp - renderer.toneMappingExposure) * Math.min(1, dt * 1.5);
@@ -351,7 +369,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
       audio.tickListener(camera);
       audio.updateAmbience(dt, {
         rain: weather.w.rain, wind: weather.w.gust, night, daylight: sky.state.daylight,
-        indoor: indoor ? 1 : 0, openness: cabin.openness(), shorePos: shore, trees: nearTree, listenerPos: camera.position,
+        indoor: indoor ? 1 : 0, openness: site.openness(), shorePos: shore, trees: nearTree, listenerPos: camera.position,
         forest: indoor ? 0.2 : 1,
       });
     }
@@ -374,6 +392,6 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   renderer.setAnimationLoop(frame);
 
   // debugging / automated testing hook
-  window.__SE = { scene, camera, player, renderer, weather, clock, sky, ix, physics, cabin, settings, colliders, terrain, setPaused, travel: ui.h.travel };
+  window.__SE = { scene, camera, player, renderer, weather, clock, sky, ix, physics, site, settings, colliders, terrain, setPaused, travel: ui.h.travel };
   return { renderer, scene, camera, player, stop: () => { running = false; renderer.setAnimationLoop(null); } };
 }

@@ -1,10 +1,17 @@
 // Height field terrain: valley with a lake, cabin pad, trails and a ring of hills.
 import * as THREE from 'three';
 import { fbm2, smoothstep, lerp } from '../core/noise.js';
-import { WATER_LEVEL, TERRAIN_SIZE, LAKE, CABIN, TREEHOUSE, CLEARING, PATHS } from '../core/layout.js';
+import { WATER_LEVEL, TERRAIN_SIZE, LAKE, CABIN, TREEHOUSE, CLEARING, PATHS, REGION } from '../core/layout.js';
 
-const segs = [];
-for (const p of PATHS) for (let i = 0; i < p.length - 1; i++) segs.push([p[i][0], p[i][1], p[i + 1][0], p[i + 1][1]]);
+let segs = [];
+/** Recompute region-dependent data (call after applyRegion). */
+export function initTerrainData() {
+  segs = [];
+  for (const p of PATHS) for (let i = 0; i < p.length - 1; i++) segs.push([p[i][0], p[i][1], p[i + 1][0], p[i + 1][1]]);
+  const base = (x, z) => fbm2(x / 95 + 10, z / 95 + 4, 5) * (2.5 + smoothstep(25, 160, Math.hypot(x, z)) * 8) + 1.2 * smoothstep(20, 80, Math.hypot(x, z));
+  clearingH = base(CLEARING.x, CLEARING.z);
+  treeH = base(TREEHOUSE.x, TREEHOUSE.z) + (REGION.id === 'hollow' ? 3 : 0);
+}
 
 /** Distance (m) from (x,z) to the nearest trail centre line. */
 export function pathDistance(x, z) {
@@ -42,9 +49,9 @@ function rawHeight(x, z) {
   h += smoothstep(150, 290, r) * (34 + fbm2(x / 60, z / 60, 4) * 26);
   // lake basin
   const e = lakeE(x, z);
-  const lakeH = WATER_LEVEL + (e - 1.0) * 7.0;
+  const lakeH = WATER_LEVEL + (e - 1.0) * LAKE.depth;
   const shore = smoothstep(0.82, 1.45, e);
-  h = lerp(Math.max(lakeH, WATER_LEVEL - 4.2), Math.max(h, WATER_LEVEL + (e - 1) * 4 + 0.15), shore);
+  h = lerp(Math.max(lakeH, WATER_LEVEL - Math.min(4.2, LAKE.depth * 0.7)), Math.max(h, WATER_LEVEL + (e - 1) * 4 + 0.15), shore);
   // cabin pad (ellipse)
   const pad = Math.hypot((x - CABIN.x) / 15, (z - CABIN.z - 1) / 11);
   h = lerp(0, h, smoothstep(0.75, 1.9, pad));
@@ -53,18 +60,20 @@ function rawHeight(x, z) {
   h = lerp(clearingH, h, smoothstep(8, 18, dc));
   const dt = Math.hypot(x - TREEHOUSE.x, z - TREEHOUSE.z);
   h = lerp(treeH, h, smoothstep(5, 12, dt));
+  if (REGION.id === 'hollow') {
+    // a gentler valley floor around the tea house, pond, spring and grove
+    const flat = smoothstep(95, 40, Math.hypot(x, z - 6));
+    h = lerp(h, h * 0.35 + 0.4, flat * 0.75);
+    const dc2 = Math.hypot(x - CLEARING.x, z - CLEARING.z);
+    h = lerp(clearingH * 0.35 + 0.4, h, smoothstep(5, 12, dc2));
+  }
   // trails are slightly worn into the ground
   const pd = pathDistance(x, z);
   h -= smoothstep(1.6, 0.3, pd) * 0.06;
   return h;
 }
 let clearingH = 0, treeH = 0;
-{ clearingH = 0; treeH = 0;
-  // evaluate pads using unflattened neighbourhood heights
-  const base = (x, z) => fbm2(x / 95 + 10, z / 95 + 4, 5) * (2.5 + smoothstep(25, 160, Math.hypot(x, z)) * 8) + 1.2 * smoothstep(20, 80, Math.hypot(x, z));
-  clearingH = base(CLEARING.x, CLEARING.z);
-  treeH = base(TREEHOUSE.x, TREEHOUSE.z);
-}
+initTerrainData();
 
 export class Terrain {
   constructor(quality, textures) {
@@ -98,6 +107,12 @@ export class Terrain {
       let r = lerp(1.05, 0.78, fd) * (0.9 + tint * 0.2), g = lerp(1.05, 0.7, fd) * (0.9 + tint * 0.15), b = lerp(1.0, 0.62, fd);
       const under = smoothstep(1.02, 0.94, e); // wet sand/mud under water
       r = lerp(r, 0.55, under); g = lerp(g, 0.5, under); b = lerp(b, 0.42, under);
+      if (REGION.id === 'hollow') {
+        // autumn: golden meadows, russet leaf-litter under the maples, mossy hollows
+        const leaf = fd * (0.6 + tint * 0.4), moss = smoothstep(0.1, -0.3, fbm2(x / 18, z / 18, 2));
+        r *= 1.18 + leaf * 0.25; g *= 0.96 - leaf * 0.12; b *= 0.62 - leaf * 0.1;
+        g += moss * 0.12 * (1 - leaf); r -= moss * 0.08;
+      }
       const high = smoothstep(14, 40, h); // rocky highlands
       col[v * 3] = lerp(r, 0.8, high); col[v * 3 + 1] = lerp(g, 0.78, high); col[v * 3 + 2] = lerp(b, 0.76, high);
     }

@@ -1,5 +1,5 @@
 // Minimal, quiet interface: a tiny dot, contextual hints, a pause menu.
-import { PLACES } from '../core/layout.js';
+import { PLACES, REGIONS, REGION } from '../core/layout.js';
 import { PRESETS, isTouch } from '../core/settings.js';
 
 const $ = (id) => document.getElementById(id);
@@ -40,6 +40,9 @@ export class UI {
     const places = $('places');
     places.innerHTML = PLACES.map((p) => `<button class="place" data-id="${p.id}">${p.name}</button>`).join('');
     places.onclick = (e) => { const b = e.target.closest('.place'); if (b) handlers.travel(b.dataset.id); };
+    const j = $('journeys');
+    j.innerHTML = Object.entries(REGIONS).map(([id, r]) => `<button class="journey ${id === REGION.id ? 'here' : ''}" data-id="${id}"><b>${r.name}${id === REGION.id ? ' · you are here' : ''}</b><span>${r.blurb}</span></button>`).join('');
+    j.onclick = (e) => { const b = e.target.closest('.journey'); if (b) this.h.journey?.(b.dataset.id); };
   }
 
   setTouch(on) {

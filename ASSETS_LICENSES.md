@@ -32,6 +32,9 @@ GitHub Actions used for deployment (`actions/checkout`, `actions/setup-node`) ar
 | Water normal map | `src/world/core/textures.js` (sum of integer-frequency waves) |
 | Terrain, pines, birches, oaks, bushes, GPU grass field, ferns, flowers, reeds, lily pads, mushrooms, logs, stumps, rocks + moss | `src/world/env/*.js` |
 | First-person hands and sleeves | `src/world/systems/hands.js` |
+| Maple Hollow: tea house, hot spring, koi bridge, stone lanterns, moon deck, swing; maple/ginkgo/tatami/roof-tile/ink-scroll textures; bamboo | `src/world/build/hollow.js`, `core/textures.js`, `env/vegetation.js` |
+| Deer, rabbits, mallards, fish/koi models | `src/world/systems/creatures.js` |
+| Lo-fi music player (8 generative tracks) | `src/world/systems/music.js` |
 | Full player body (sweater, jeans, boots; denim & leather textures) | `src/world/systems/body.js`, `core/textures.js` |
 | Distant-tree impostor billboards (rendered at load from the procedural trees) | `src/world/env/vegetation.js` |
 | Lake shader, caustics, puddles, rain on glass, splash/drip particles | `src/world/env/water.js`, `env/terrain.js`, `build/kit.js`, `systems/splashes.js` |

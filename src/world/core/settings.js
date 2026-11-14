@@ -31,6 +31,7 @@ const KEY = 'somewhere-else-settings-v2';
 const defaults = () => ({
   quality: detectQuality(),
   maxFps: isTouch ? 30 : 60,
+  region: 'pines',
   volume: 0.8,
   sensitivity: 1,
   invertY: false,

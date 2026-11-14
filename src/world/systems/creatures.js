@@ -113,13 +113,14 @@ export function rabbitModel() {
 }
 
 /** Instanced fish with a vertex-shader tail swish. */
-export function fishSchool(scene, count, T) {
+export function fishSchool(scene, count, T, koi = false) {
   const geo = along([[0.0, -0.12], [0.022, -0.1], [0.032, -0.04], [0.028, 0.04], [0.012, 0.1], [0.004, 0.12]], 10);
   geo.scale(0.6, 1, 1);
   const tail = new THREE.BufferGeometry();
   tail.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.11, 0, 0.035, 0.17, 0, -0.035, 0.17], 3)); tail.computeVertexNormals();
-  const g = mergeGeometries([geo.toNonIndexed(), tail]);
-  shade(g, [0.32, 0.36, 0.3], [0.8, 0.78, 0.7], 0.3);
+  const body = geo.toNonIndexed(); body.deleteAttribute('uv');
+  const g = mergeGeometries([body, tail]);
+  if (koi) shade(g, [1, 1, 1], [1, 0.97, 0.94], 0.3); else shade(g, [0.32, 0.36, 0.3], [0.8, 0.78, 0.7], 0.3);
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.35, side: THREE.DoubleSide });
   const u = { uTime: { value: 0 } };
   mat.onBeforeCompile = (sh) => {
@@ -129,6 +130,7 @@ export function fishSchool(scene, count, T) {
       transformed.x += sin(uTime * 7.0 + ph - position.z * 18.0) * 0.03 * smoothstep(-0.05, 0.17, position.z);`);
   };
   const im = new THREE.InstancedMesh(g, mat, count);
+  if (koi) { const pal = [0xff6a20, 0xf4f0e8, 0xe83a20, 0xf0b030, 0x2a2a2a]; for (let i = 0; i < count; i++) im.setColorAt(i, new THREE.Color(pal[i % pal.length])); }
   im.frustumCulled = false;
   scene.add(im);
   return { mesh: im, u };

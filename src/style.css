@@ -155,3 +155,9 @@ body.scoping #crosshair, body.scoping #hint { opacity: 0 !important; }
 .vol input { width: 100%; accent-color: #4f8a72; }
 .keys { font-size: 8.5px; color: #7c766c; text-align: center; margin-top: 6px; letter-spacing: .04em; }
 body.touch .keys { display: none; }
+
+.menu-grid h3.gap { margin-top: 18px; }
+.journey { display: block; width: 100%; text-align: left; background: rgba(255,255,255,.03); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 6px; }
+.journey b { font-family: var(--serif); font-weight: 400; font-size: 18px; display: block; }
+.journey span { font-size: 11px; color: var(--muted); }
+.journey.here { border-color: rgba(233,197,143,.6); }

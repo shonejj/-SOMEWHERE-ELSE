@@ -409,6 +409,70 @@ export function fernFrond(size = 256) {
   return toTexture(c, true, false);
 }
 
+export function mapleLeaves(size = 256, palette = [[190, 50, 30], [220, 90, 30], [235, 150, 40]]) {
+  const c = canvas(size); const g = c.getContext('2d');
+  const rnd = mulberry32(31 + palette[0][0]);
+  const leaf = (x, y, s, a, col) => {
+    g.save(); g.translate(x, y); g.rotate(a); g.scale(s, s);
+    g.fillStyle = col; g.beginPath();
+    for (let i = 0; i <= 10; i++) { const ang = -Math.PI / 2 + (i / 10) * Math.PI * 2; const r = i % 2 ? 0.42 : 1; g.lineTo(Math.cos(ang) * r, Math.sin(ang) * r * (i === 5 || i === 4 || i === 6 ? 0.8 : 1)); }
+    g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(80,30,10,0.35)'; g.lineWidth = 0.05; g.beginPath(); for (let i = 0; i < 5; i++) { const ang = -Math.PI / 2 + (i / 5) * Math.PI * 2; g.moveTo(0, 0); g.lineTo(Math.cos(ang) * 0.85, Math.sin(ang) * 0.85); } g.stroke();
+    g.restore();
+  };
+  for (let i = 0; i < 140; i++) {
+    const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * size * 0.42;
+    const p = palette[Math.floor(rnd() * palette.length)], k = 0.7 + rnd() * 0.45;
+    leaf(size / 2 + Math.cos(a) * r, size / 2 + Math.sin(a) * r, size * (0.035 + rnd() * 0.025), rnd() * 6.28, `rgb(${p[0] * k | 0},${p[1] * k | 0},${p[2] * k | 0})`);
+  }
+  return toTexture(c, true, false);
+}
+
+export function ginkgoLeaves(size = 256) {
+  const c = canvas(size); const g = c.getContext('2d'); const rnd = mulberry32(77);
+  for (let i = 0; i < 170; i++) {
+    const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * size * 0.42, s = size * (0.03 + rnd() * 0.02), k = 0.8 + rnd() * 0.35;
+    g.save(); g.translate(size / 2 + Math.cos(a) * r, size / 2 + Math.sin(a) * r); g.rotate(rnd() * 6.28);
+    g.fillStyle = `rgb(${235 * k | 0},${190 * k | 0},${50 * k | 0})`;
+    g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, s, -Math.PI * 0.85, -Math.PI * 0.15); g.closePath(); g.fill(); g.restore();
+  }
+  return toTexture(c, true, false);
+}
+
+export function tatami(size) {
+  return generate(size, (u, v, o) => {
+    const weave = Math.sin(v * size * 1.6) * 0.5 + 0.5, fib = fbm2(u * 120, v * 4, 2, 120, 4);
+    const border = (u < 0.035 || u > 0.965) ? 1 : 0;
+    const k = 0.78 + weave * 0.14 + fib * 0.1;
+    if (border) { o.r = 0.12; o.g = 0.14; o.b = 0.12; o.h = 0.7; return; }
+    o.r = 0.72 * k; o.g = 0.66 * k; o.b = 0.42 * k; o.h = weave * 0.5;
+  }, 1.5);
+}
+
+export function kawara(size) {
+  return generate(size, (u, v, o) => {
+    const rows = 8, cols = 10, row = Math.floor(v * rows), fv = v * rows - row;
+    const fu = (u * cols + (row % 2) * 0.5) % 1;
+    const curve = Math.sin(fu * Math.PI);
+    const n = fbm2(u * 30, v * 30, 3, 30, 30);
+    const k = (0.45 + curve * 0.35 + n * 0.1) * (0.6 + fv * 0.4);
+    o.r = 0.32 * k; o.g = 0.33 * k; o.b = 0.35 * k; o.h = curve * 0.8 * fv;
+  }, 4);
+}
+
+export function inkScroll(w = 256, h = 640) {
+  const c = canvas(w, h); const g = c.getContext('2d'); const rnd = mulberry32(5);
+  g.fillStyle = '#efe6d0'; g.fillRect(0, 0, w, h);
+  for (let l = 0; l < 3; l++) {
+    g.fillStyle = `rgba(30,30,35,${0.18 + l * 0.18})`; g.beginPath(); const base = h * (0.42 + l * 0.12);
+    g.moveTo(0, h); for (let x = 0; x <= w; x += 8) g.lineTo(x, base - Math.sin(x * 0.02 + l * 2) * 50 - rnd() * 20 + l * 10); g.lineTo(w, h); g.fill();
+  }
+  g.fillStyle = 'rgba(160,30,20,0.85)'; g.fillRect(w * 0.72, h * 0.08, 18, 18);
+  g.strokeStyle = 'rgba(20,20,20,0.85)'; g.lineWidth = 3;
+  for (let i = 0; i < 6; i++) { const y = h * 0.1 + i * 26; g.beginPath(); g.moveTo(w * 0.18, y); g.quadraticCurveTo(w * 0.24, y + 8, w * 0.2, y + 18); g.stroke(); }
+  return toTexture(c, true, false);
+}
+
 export function grille(size = 128) {
   const c = canvas(size); const g = c.getContext('2d');
   g.fillStyle = '#4a3a2a'; g.fillRect(0, 0, size, size);
@@ -490,6 +554,12 @@ export async function buildTextures(quality, onProgress) {
   T.grille = grille();
   T.clock = clockFace();
   T.books = bookSpines();
+  T.maple = mapleLeaves(256);
+  T.mapleGold = mapleLeaves(256, [[230, 150, 30], [240, 190, 60], [200, 110, 30]]);
+  T.ginkgo = ginkgoLeaves(256);
+  T.tatami = tatami(half);
+  T.kawara = kawara(half);
+  T.scroll = inkScroll();
   onProgress?.(1, 'done');
   return T;
 }

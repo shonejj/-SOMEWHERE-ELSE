@@ -21,6 +21,9 @@ const hero = startHero($('hero-canvas'), () => { if (audio && soundOn) setTimeou
 const qs = $('quality-select');
 qs.value = settings.quality;
 qs.onchange = () => { settings.quality = qs.value; saveSettings(settings); };
+const rs = $('region-select');
+rs.value = settings.region || 'pines';
+rs.onchange = () => { settings.region = rs.value; saveSettings(settings); };
 
 function ensureAudio() {
   if (!audio) {
@@ -93,4 +96,4 @@ async function enter() {
   }
 }
 $('enter').onclick = enter;
-try { if (sessionStorage.getItem('se-autoenter')) { sessionStorage.removeItem('se-autoenter'); $('enter').classList.add('pulse'); $('enter').scrollIntoView(); } } catch (e) { /* ignore */ }
+try { if (sessionStorage.getItem('se-autoenter')) { sessionStorage.removeItem('se-autoenter'); enter(); } } catch (e) { /* ignore */ }

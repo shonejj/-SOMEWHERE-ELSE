@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { DataUtils } from 'three';
 import { mulberry32, smoothstep, fbm2 } from '../core/noise.js';
-import { WATER_LEVEL, CLEARING, DOCK } from '../core/layout.js';
+import { WATER_LEVEL, CLEARING, DOCK, CABIN, REGION } from '../core/layout.js';
 import { pathDistance, forestDensity } from './terrain.js';
 import { windUniforms } from './vegetation.js';
 
@@ -18,9 +18,9 @@ export class GrassField {
       let m = smoothstep(0.5, 1.9, pathDistance(x, z));
       m *= smoothstep(WATER_LEVEL + 0.02, WATER_LEVEL + 0.25, h);
       m *= 1 - forestDensity(x, z) * 0.6;
-      if (x > -7.6 && x < 7.6 && z > -4.8 && z < 7.6) m = 0;               // cabin, porch, steps
+      if (x > -7.6 && x < 7.6 && z > -5.6 && z < 7.6) m = 0;               // cabin / tea house, porch, steps
       if (Math.abs(x - DOCK.x) < 1.8 && z > 18 && z < 40) m *= 0.3;
-      if (Math.hypot(x - CLEARING.x, z - CLEARING.z) < 2.2) m = 0;
+      if (Math.hypot(x - CLEARING.x, z - CLEARING.z) < (REGION.id === 'hollow' ? 4.2 : 2.2)) m = 0;
       m *= 0.75 + 0.25 * (fbm2(x / 9, z / 9, 2) * 0.5 + 0.5);
       const tall = 0.75 + 0.6 * (fbm2(x / 25 + 3, z / 25, 3) * 0.5 + 0.5) + (1 - forestDensity(x, z)) * 0.1;
       const k = (j * n + i) * 4;
@@ -31,6 +31,7 @@ export class GrassField {
 
     this.layers = [];
     this.tex = tex;
+    this.autumn = REGION.id === 'hollow';
     const near = quality.grassNear, far = quality.grassFar;
     this.layers.push(this.makeLayer(scene, n, step, half, near[0], near[1], near[2], 0, 1.0, 11));
     this.layers.push(this.makeLayer(scene, n, step, half, far[0], far[1], far[2], near[1] * 0.75, 1.35, 23));
@@ -51,7 +52,9 @@ export class GrassField {
         const ry = r() * Math.PI, cx = Math.cos(ry), sz = Math.sin(ry), lean = (r() - 0.5) * 0.6;
         const shade = 0.75 + r() * 0.35;
         // mostly fresh green, a few yellowing blades
-        const tint = dry < 0.1 ? [0.34, 0.31, 0.13] : dry < 0.35 ? [0.17, 0.27, 0.08] : [0.11, 0.24, 0.06];
+        const tint = this.autumn
+          ? (dry < 0.3 ? [0.42, 0.33, 0.12] : dry < 0.55 ? [0.36, 0.22, 0.09] : dry < 0.8 ? [0.24, 0.27, 0.09] : [0.15, 0.24, 0.07])
+          : dry < 0.1 ? [0.34, 0.31, 0.13] : dry < 0.35 ? [0.17, 0.27, 0.08] : [0.11, 0.24, 0.06];
         for (let s = 0; s <= 2; s++) {
           const t = s / 2, ww = w * (1 - t * 0.8), o = lean * t * t * h, y = t * h;
           for (const side of [-1, 1]) {
