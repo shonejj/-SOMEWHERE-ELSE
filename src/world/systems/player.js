@@ -29,6 +29,33 @@ export class Player {
     this.flashOn = false;
     this.swimming = false; this.swimPhase = 0; this.stepLen = 1.25; this.speedH = 0;
     this.onSplash = null; this.onStroke = null;
+    this.view = 'first'; this.eyePos = new THREE.Vector3(); this.occluders = [];
+    this.camDist = 3.2; this.dive = 0; this.diving = false;
+    this.tpRay = new THREE.Raycaster();
+  }
+
+  toggleView() { this.view = this.view === 'first' ? 'third' : 'first'; this.camDist = 1.0; }
+
+  /** Over-the-shoulder camera that never goes through walls or the ground. */
+  placeThirdPerson(dt) {
+    const cam = this.camera, eye = this.eyePos;
+    // orbit pitch is clamped so the camera never dives into the floor or the bed
+    const lying = this.mode === 'seat' && this.seat?.lie;
+    const p = lying ? 0.9 : Math.max(-0.9, Math.min(0.55, this.pitch));
+    const yaw = lying ? this.seat.yaw + Math.PI : this.yaw;
+    const fwd = tmpV.set(-Math.sin(yaw) * Math.cos(p), Math.sin(p), -Math.cos(yaw) * Math.cos(p));
+    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    const want = lying ? 2.2 : 3.0;
+    const dir = fwd.clone().negate().multiplyScalar(want).addScaledVector(right, lying ? 0 : 0.45).add(new THREE.Vector3(0, lying ? 1.2 : 0.3, 0));
+    const len = dir.length(); dir.normalize();
+    this.tpRay.set(eye, dir); this.tpRay.far = len;
+    const hit = this.tpRay.intersectObjects(this.occluders, true)[0];
+    const d = hit ? Math.max(0.35, hit.distance - 0.25) : len;
+    this.camDist += (d - this.camDist) * Math.min(1, dt * (d < this.camDist ? 18 : 3));
+    cam.position.copy(eye).addScaledVector(dir, this.camDist);
+    const g = this.terrain.heightAt(cam.position.x, cam.position.z) + 0.25;
+    if (cam.position.y < g) cam.position.y = g;
+    if (lying) cam.lookAt(eye.x, eye.y - 0.3, eye.z);
   }
 
   /** Moves the player; yHint is the floor height to search below (defaults to terrain). */
@@ -76,13 +103,20 @@ export class Player {
     this.eyeY = this.camera.position.y; this.pitch = 0;
     s.onExit?.();
   }
-  scope(dir) { this.mode = 'scope'; this.scopeYaw = dir; this.yaw = dir; this.pitch = -0.02; }
+  scope(dir) { this.mode = 'scope'; this.scopeYaw = dir; this.yaw = dir; this.pitch = 0.05; this.scopeZoom = 8; this.onScope?.(true); }
 
   toggleFlashlight() { this.flashOn = !this.flashOn; this.flashlight.intensity = this.flashOn ? 22 : 0; this.audio?.click(null, 0.25); }
 
   update(dt) {
+    if (this.input.hit('KeyV')) this.toggleView();
+    this.updateInner(dt);
+    this.eyePos.copy(this.camera.position);
+    if (this.view === 'third' && this.mode !== 'scope') this.placeThirdPerson(dt);
+  }
+
+  updateInner(dt) {
     const inp = this.input, cam = this.camera, s = this.settings;
-    const sens = 0.0022 * s.sensitivity * (this.mode === 'scope' ? 0.25 : 1);
+    const sens = 0.0022 * s.sensitivity * (this.mode === 'scope' ? 1 / Math.max(1, this.zoom) : 1);
     if (!this.lookLocked) {
       this.yaw -= inp.look.x * sens;
       this.pitch -= inp.look.y * sens * (s.invertY ? -1 : 1);
@@ -92,12 +126,13 @@ export class Player {
 
     if (this.mode === 'seat') return this.updateSeat(dt, ax);
     if (this.mode === 'scope') {
-      if (ax.mag > 0.3 || inp.hit('Space') || inp.hit('KeyE') || inp.hit('Tap')) { this.mode = 'walk'; inp.pressed.delete('KeyE'); inp.pressed.delete('Tap'); }
-      this.zoom += (5 - this.zoom) * Math.min(1, dt * 4);
+      if (ax.mag > 0.3 || inp.hit('Space') || inp.hit('KeyE') || inp.hit('Tap')) { this.mode = 'walk'; this.onScope?.(false); inp.pressed.delete('KeyE'); inp.pressed.delete('Tap'); }
+      this.scopeZoom = Math.max(2, Math.min(40, this.scopeZoom * Math.pow(1.15, -inp.wheel)));
+      this.zoom += (this.scopeZoom - this.zoom) * Math.min(1, dt * 4);
     } else this.zoom += (1 - this.zoom) * Math.min(1, dt * 6);
 
     // crouch
-    if (inp.hit('KeyC') || inp.hit('ControlLeft')) this.crouchToggle = !this.crouchToggle;
+    if (!this.swimming && (inp.hit('KeyC') || inp.hit('ControlLeft'))) this.crouchToggle = !this.crouchToggle;
     const wantCrouch = this.crouchToggle || inp.down('ControlLeft');
     const ceil = this.col.ceilingHeight(this.pos.x, this.pos.z, RADIUS, this.pos.y);
     if (!wantCrouch && this.pos.y + STAND > ceil) this.crouching = true; else this.crouching = wantCrouch;
@@ -128,10 +163,14 @@ export class Player {
     } else if (this.swimming) {
       this.climbing = false;
       // buoyancy: float with the head above the surface, gentle bobbing
-      const target = WATER_LEVEL - 1.42 + Math.sin(this.swimPhase * 2) * 0.03;
+      if (inp.hit('KeyC') || inp.hit('ControlLeft')) this.diving = !this.diving;
+      if (inp.hit('Space')) this.diving = false;
+      const floor = this.findSupport(this.pos.x, this.pos.z, this.pos.y + 0.5).y;
+      const maxDive = Math.max(0, WATER_LEVEL - 1.42 - (floor + 0.25));
+      this.dive += ((this.diving ? maxDive : 0) - this.dive) * Math.min(1, dt * (this.diving ? 0.7 : 1.2));
+      const target = WATER_LEVEL - 1.42 - this.dive + Math.sin(this.swimPhase * 2) * (this.dive > 0.3 ? 0.01 : 0.03);
       this.vel.y += ((target - this.pos.y) * 9 - this.vel.y * 4) * dt;
       if (this.pos.y < target - 0.4) this.vel.y = Math.max(this.vel.y, 2.5); // surface quickly after a plunge
-      if (inp.hit('Space')) this.vel.y += 1.2;
     } else {
       this.climbing = false;
       this.vel.y -= 9.81 * dt;
@@ -154,7 +193,7 @@ export class Player {
       // deep water: swim
       const deep = !sup.box && WATER_LEVEL - sup.y > 1.38 && lakeE(this.pos.x, this.pos.z) < 1.3;
       if (deep !== this.swimming) {
-        this.swimming = deep;
+        this.swimming = deep; if (!deep) { this.diving = false; this.dive = 0; }
         if (deep) { this.onSplash?.(this.pos, 1.0); this.vel.y *= 0.3; }
       }
       if (this.swimming) { this.onGround = false; this.supportBox = null; continue; }

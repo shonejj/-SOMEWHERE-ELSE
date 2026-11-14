@@ -106,7 +106,7 @@ export class Input {
     };
     btn('tb-use', 'KeyE'); btn('tb-jump', 'Space'); btn('tb-crouch', 'KeyC'); btn('tb-light', 'KeyF');
     btn('tb-run', 'ShiftLeft', true); btn('tb-drop', 'KeyQ'); btn('tb-throw', 'Mouse0'); btn('tb-inspect', 'KeyR', true);
-    btn('tb-menu', 'Escape');
+    btn('tb-menu', 'Escape'); btn('tb-view', 'KeyV'); btn('tb-music', 'KeyM');
   }
 
   down(code) { return this.keys.has(code); }

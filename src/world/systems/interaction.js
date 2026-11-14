@@ -29,9 +29,11 @@ export class Interaction {
   occluder(mesh) { this.occluders.push(mesh); }
   onUpdate(fn) { this.updaters.push(fn); }
 
+  get eye() { return this.player.eyePos || this.camera.position; }
+
   pick() {
     this.camera.getWorldDirection(fwd);
-    this.ray.set(this.camera.position, fwd);
+    this.ray.set(this.eye, fwd);
     const hits = this.ray.intersectObjects(this.held ? this.occluders : this.targets.concat(this.occluders), true);
     const direct = this.resolveHits(hits);
     if (direct || this.held) return direct;
@@ -40,16 +42,16 @@ export class Interaction {
     let best = null, bestA = this.coneAngle;
     for (const it of this.physics.items) {
       if (it.held) continue;
-      tmp.copy(it.mesh.position).sub(this.camera.position);
+      tmp.copy(it.mesh.position).sub(this.eye);
       const d = tmp.length();
       if (d > this.ray.far || d > block + 0.15 || d < 0.05) continue;
       const a = Math.acos(Math.min(1, tmp.dot(fwd) / d));
       if (a < bestA) { bestA = a; best = it; }
     }
     if (!best) return null;
-    tmp.copy(best.mesh.position).sub(this.camera.position);
+    tmp.copy(best.mesh.position).sub(this.eye);
     const d = tmp.length();
-    this.ray.set(this.camera.position, tmp.normalize());
+    this.ray.set(this.eye, tmp.normalize());
     const occ = this.ray.intersectObjects(this.occluders, true)[0];
     if (occ && occ.distance < d - 0.1) return null;
     return { kind: 'item', obj: best.mesh, item: best, point: best.mesh.position.clone() };
@@ -77,7 +79,8 @@ export class Interaction {
     this.holdQ.copy(qa).multiply(item.mesh.quaternion);
     this.audio?.pickup(item.mesh.position);
     this.holdDist = 0.75;
-    this.ui.setHolding(item.name);
+    if (item.holdPose) this.holdQ.setFromEuler(item.holdPose.euler);
+    this.ui.setHolding(item.name, !!item.instrument);
   }
 
   release(throwSpeed = 0) {
@@ -108,17 +111,25 @@ export class Interaction {
 
     if (this.held) {
       const it = this.held;
-      const inspecting = inp.down('KeyR') || inp.mouse.right;
+      const inspecting = !it.holdPose && (inp.down('KeyR') || inp.mouse.right);
       pl.lookLocked = inspecting;
       this.camera.getWorldDirection(fwd);
-      let want = inspecting ? 0.5 + it.size * 0.25 : 0.7 + it.size * 0.3;
-      // keep held objects from pushing through walls
-      this.ray.set(this.camera.position, fwd);
-      const hit = this.ray.intersectObjects(this.occluders, true)[0];
-      if (hit) want = Math.min(want, Math.max(0.25, hit.distance - it.size * 0.4));
-      this.holdDist += (want - this.holdDist) * Math.min(1, dt * 10);
-      tmp.copy(this.camera.position).addScaledVector(fwd, this.holdDist);
-      if (!inspecting) { tmp.y -= 0.16; tmp.addScaledVector(AX.set(1, 0, 0).applyQuaternion(this.camera.quaternion), 0.12); }
+      const third = pl.view === 'third';
+      const origin = this.eye;
+      if (it.holdPose && !third) {
+        tmp.copy(it.holdPose.offset).applyQuaternion(this.camera.quaternion).add(this.camera.position);
+      } else {
+        let want = inspecting ? 0.5 + it.size * 0.25 : 0.7 + it.size * 0.3;
+        if (third) want = 0.45 + it.size * 0.2;
+        this.ray.set(origin, fwd);
+        const hit = this.ray.intersectObjects(this.occluders, true)[0];
+        if (hit) want = Math.min(want, Math.max(0.25, hit.distance - it.size * 0.4));
+        this.holdDist += (want - this.holdDist) * Math.min(1, dt * 10);
+        if (third) { fwd.y = 0; fwd.normalize(); }
+        tmp.copy(origin).addScaledVector(fwd, this.holdDist);
+        if (third) tmp.y -= 0.42;
+        else if (!inspecting) { tmp.y -= 0.16; tmp.addScaledVector(AX.set(1, 0, 0).applyQuaternion(this.camera.quaternion), 0.12); }
+      }
       it.mesh.position.lerp(tmp, Math.min(1, dt * 16));
       if (inspecting) {
         // rotate the object with mouse / finger movement
@@ -128,6 +139,12 @@ export class Interaction {
       }
       q.copy(this.camera.quaternion).multiply(this.holdQ);
       it.mesh.quaternion.slerp(q, Math.min(1, dt * 14));
+      if (it.instrument) {
+        this.ui.hint(this.ui.touch ? 'Strum · Drop to put it down' : 'Click to strum · E to put it down', true);
+        if (inp.hit('Mouse0')) { it.play(); this.hands?.strum(); }
+        else if (use || inp.hit('KeyQ')) this.release(0);
+        return;
+      }
       if (inp.hit('Mouse0')) this.release(7.5);
       else if (use || inp.hit('KeyQ')) this.release(0);
       this.ui.hint(null);

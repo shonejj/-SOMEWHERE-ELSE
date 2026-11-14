@@ -12,6 +12,7 @@ export class UI {
     this.menu = $('menu');
     this.lastHint = null;
     this.setTouch(isTouch);
+    addEventListener('keydown', (e) => { if (e.code === 'Escape' && $('paper').classList.contains('show')) { e.preventDefault(); this.closeOverlay(); } });
 
     // menu controls
     const q = $('opt-quality');
@@ -66,9 +67,46 @@ export class UI {
     this._t = setTimeout(() => this.toastEl.classList.remove('show'), ms);
   }
 
-  setHolding(name) {
+  setHolding(name, instrument = false) {
     document.body.classList.toggle('holding', !!name);
+    $('tb-throw').textContent = instrument ? 'Strum' : 'Throw';
+    $('tb-inspect').style.display = instrument ? 'none' : '';
   }
+
+  /** A sheet of paper: read-only text or the editable journal. */
+  paper(title, html, editable = false) {
+    const el = $('paper');
+    $('paper-title').textContent = title;
+    $('paper-body').innerHTML = html;
+    $('paper-edit').hidden = !editable;
+    el.classList.add('show');
+    this.h.overlay?.(true);
+    const close = () => { el.classList.remove('show'); this.h.overlay?.(false); };
+    $('paper-close').onclick = close;
+    this._closePaper = close;
+  }
+
+  journal() {
+    let entries = [];
+    try { entries = JSON.parse(localStorage.getItem('se-journal') || '[]'); } catch (e) { /* storage unavailable */ }
+    const esc = (t) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+    const list = entries.slice().reverse().map((e) => `<div class="entry"><div class="when">${esc(e.when)}</div><div>${esc(e.text).replace(/\n/g, '<br>')}</div></div>`).join('');
+    this.paper('Journal', list || '<p class="muted">The first page is empty. Write whatever you like — it stays on this device.</p>', true);
+    const ta = $('paper-text'); ta.value = ''; setTimeout(() => ta.focus(), 50);
+    $('paper-save').onclick = () => {
+      const text = ta.value.trim(); if (!text) return;
+      const h = this.h.hour?.() ?? 12;
+      const when = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) + ` · ${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')} at the cabin`;
+      entries.push({ when, text });
+      try { localStorage.setItem('se-journal', JSON.stringify(entries.slice(-200))); } catch (e) { /* ignore */ }
+      this.toast('Written down.');
+      this.journal();
+    };
+  }
+
+  get overlayOpen() { return $('paper').classList.contains('show') || $('player').classList.contains('open'); }
+  closeOverlay() { if ($('paper').classList.contains('show')) this._closePaper?.(); }
+  setScope(on) { document.body.classList.toggle('scoping', on); }
 
   showMenu(on) {
     this.menu.classList.toggle('show', on);

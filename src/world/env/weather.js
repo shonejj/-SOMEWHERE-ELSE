@@ -84,7 +84,7 @@ export class Weather {
     const sm = new THREE.ShaderMaterial({
       uniforms: { uColor: this.rainU.uColor, uSize: { value: 70 } },
       vertexShader: `attribute float alpha; varying float vA; uniform float uSize; void main(){ vA = alpha; vec4 mv = modelViewMatrix*vec4(position,1.0); gl_PointSize = uSize * (0.3 + (1.0-alpha)) / -mv.z; gl_Position = projectionMatrix*mv; }`,
-      fragmentShader: `uniform vec3 uColor; varying float vA; void main(){ vec2 c = gl_PointCoord-0.5; float d = length(c); float ring = smoothstep(0.5,0.35,d)*smoothstep(0.15,0.3,d); gl_FragColor = vec4(uColor, ring*vA*0.6); }`,
+      fragmentShader: `uniform vec3 uColor; varying float vA; void main(){ vec2 c = gl_PointCoord-0.5; float d = length(c); float ring = smoothstep(0.5,0.35,d)*smoothstep(0.15,0.3,d); gl_FragColor = vec4(uColor, ring*vA*0.35); }`,
       transparent: true, depthWrite: false,
     });
     this.splash = new THREE.Points(sg, sm);
@@ -169,6 +169,7 @@ export class Weather {
         if (y === null) { this.splashAlpha[i] = 0; continue; }
         pos.setXYZ(i, x, y + 0.03, z);
         this.splashLife[i] = 1;
+        if (this.splashFx && r < 9) this.splashFx(x, y, z);
       } else this.splashAlpha[i] = 0;
     }
     pos.needsUpdate = true;

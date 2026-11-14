@@ -14,7 +14,7 @@ const frag = /* glsl */`
 uniform vec3 zenith; uniform vec3 horizon; uniform vec3 groundCol;
 uniform vec3 sunDir; uniform vec3 sunCol; uniform vec3 moonDir;
 uniform float cloudCover; uniform float cloudDark; uniform float stars; uniform float time;
-uniform float flash; uniform float daylight; uniform float haze;
+uniform float flash; uniform float daylight; uniform float haze; uniform float uPix;
 varying vec3 vDir;
 float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
 float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -29,24 +29,46 @@ void main(){
   float sd = max(dot(d, sunDir), 0.0);
   float sunVis = smoothstep(-0.12, 0.02, sunDir.y);
   col += sunCol * (pow(sd, 6.0) * 0.35 + pow(sd, 64.0) * 0.6) * sunVis * (1.0 - cloudCover * 0.75);
-  // stars
-  if (stars > 0.01 && y > 0.0) {
-    vec3 q = d * 260.0; vec2 cell = floor(q.xz / (q.y + 60.0) * 60.0 + floor(q.y*0.1));
-    float h = h21(cell);
-    float tw = 0.6 + 0.4 * sin(time * (2.0 + h * 6.0) + h * 40.0);
-    col += vec3(0.9,0.95,1.0) * step(0.9965, h) * stars * tw * smoothstep(0.0, 0.3, y) * 1.2;
-    float mw = smoothstep(0.35, 0.0, abs(dot(d, normalize(vec3(0.3,0.5,-0.8))))) * fbm(d.xz*8.0);
-    col += vec3(0.5,0.55,0.7) * mw * stars * 0.05;
+  // stars: three layers of point stars in a spherical grid, sized to stay crisp at any zoom
+  if (stars > 0.01 && y > -0.05) {
+    vec2 sph = vec2(atan(d.z, d.x), asin(clamp(d.y, -1.0, 1.0)));
+    float sacc = 0.0; vec3 scol = vec3(0.0);
+    for (int L = 0; L < 3; L++) {
+      float fl = float(L);
+      float cells = 70.0 + fl * 110.0;
+      vec2 g = sph * cells / 3.14159;
+      vec2 id = floor(g);
+      float h = h21(id + fl * 31.7);
+      vec2 c = vec2(h21(id + 4.3 + fl), h21(id + 9.1 + fl));
+      vec2 off = (g - id - c) * 3.14159 / cells; off.x *= cos(sph.y);
+      float dist = length(off);
+      float bright = pow(h, 6.0 - fl) * (1.6 - fl * 0.4);
+      float r = max(uPix * 0.9, 0.00025);
+      float st = smoothstep(r, r * 0.25, dist) * bright;
+      float tw = 0.75 + 0.25 * sin(time * (1.5 + h * 7.0) + h * 50.0);
+      vec3 tint = mix(vec3(1.0, 0.82, 0.68), vec3(0.75, 0.85, 1.0), h21(id + 2.2));
+      scol += tint * st * tw;
+    }
+    float mw = smoothstep(0.32, 0.0, abs(dot(d, normalize(vec3(0.3, 0.5, -0.8))))) * fbm(d.xz * 9.0 + d.y * 3.0);
+    col += (scol * 1.6 + vec3(0.5, 0.55, 0.7) * mw * 0.06) * stars * smoothstep(0.0, 0.15, y);
   }
   // sun disk
   col += sunCol * smoothstep(0.99955, 0.9998, sd) * 18.0 * sunVis * (1.0 - cloudCover * 0.9);
-  // moon
+  // moon: a lit sphere with maria, craters and the correct phase from the sun
   float md = dot(d, moonDir);
-  float moonMask = smoothstep(0.99935, 0.99955, md);
-  vec2 mp = vec2(dot(d - moonDir, normalize(cross(moonDir, vec3(0,1,0)))), (d - moonDir).y) * 40.0;
-  float crater = fbm(mp * 3.0 + 3.0);
-  col += vec3(0.85,0.88,0.95) * moonMask * (1.2 + crater * 0.6) * (1.0 - cloudCover * 0.85) * (1.0 - daylight * 0.7);
-  col += vec3(0.4,0.45,0.6) * pow(max(md,0.0), 300.0) * 0.25 * (1.0 - cloudCover * 0.6) * (1.0 - daylight);
+  vec3 mR = normalize(cross(moonDir, vec3(0.0, 1.0, 0.0))); vec3 mU = cross(mR, moonDir);
+  vec2 mp = vec2(dot(d, mR), dot(d, mU)) / 0.0095;
+  float mr = length(mp);
+  if (md > 0.0 && mr < 1.0) {
+    vec3 n = normalize(mR * mp.x + mU * mp.y - moonDir * sqrt(1.0 - mr * mr));
+    float lit = clamp(dot(n, normalize(sunDir - moonDir * dot(sunDir, moonDir) + moonDir * 0.0001)), 0.0, 1.0);
+    float maria = smoothstep(0.45, 0.7, fbm(mp * 2.2 + 3.0));
+    float crat = fbm(mp * 9.0) * 0.25;
+    vec3 mc = vec3(0.86, 0.86, 0.82) * (1.0 - maria * 0.35 - crat) * (0.06 + lit * 1.6);
+    float edge = smoothstep(1.0, 0.96, mr);
+    col = mix(col, mc * (1.0 - cloudCover * 0.85) + col * 0.15, edge * (1.0 - daylight * 0.6));
+  }
+  col += vec3(0.4, 0.45, 0.6) * pow(max(md, 0.0), 400.0) * 0.2 * (1.0 - cloudCover * 0.6) * (1.0 - daylight);
   // clouds
   if (y > -0.02) {
     vec2 p = d.xz / (y + 0.12) * 1.3 + vec2(time * 0.006, time * 0.0025);
@@ -79,7 +101,7 @@ export class SkySystem {
     this.uniforms = {
       zenith: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, groundCol: { value: new THREE.Color() },
       sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunCol: { value: new THREE.Color(1, 1, 1) }, moonDir: { value: new THREE.Vector3(0, -1, 0) },
-      cloudCover: { value: 0.3 }, cloudDark: { value: 0 }, stars: { value: 0 }, time: { value: 0 }, flash: { value: 0 },
+      cloudCover: { value: 0.3 }, cloudDark: { value: 0 }, stars: { value: 0 }, time: { value: 0 }, flash: { value: 0 }, uPix: { value: 0.002 },
       daylight: { value: 1 }, haze: { value: 0 },
     };
     const mat = new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: vert, fragmentShader: frag, side: THREE.BackSide, depthWrite: false, fog: false });

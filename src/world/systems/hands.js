@@ -5,11 +5,11 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 const FINGERS = [
-  // x offset, base z, segment lengths, radius, splay
-  { x: -0.026, z: -0.086, L: [0.044, 0.027, 0.021], r: 0.0092, splay: -0.08 }, // index
-  { x: -0.008, z: -0.090, L: [0.048, 0.030, 0.022], r: 0.0095, splay: -0.02 }, // middle
-  { x: 0.010, z: -0.087, L: [0.045, 0.028, 0.021], r: 0.009, splay: 0.04 },   // ring
-  { x: 0.026, z: -0.080, L: [0.036, 0.022, 0.019], r: 0.0082, splay: 0.11 },  // little
+  // x offset, base z, segment lengths (proximal, middle, distal), base radius, splay
+  { x: -0.0255, z: -0.087, L: [0.043, 0.026, 0.02], r: 0.0082, splay: -0.07 }, // index
+  { x: -0.0083, z: -0.091, L: [0.047, 0.029, 0.021], r: 0.0084, splay: -0.015 }, // middle
+  { x: 0.0088, z: -0.088, L: [0.044, 0.027, 0.02], r: 0.0078, splay: 0.045 },  // ring
+  { x: 0.0245, z: -0.081, L: [0.034, 0.021, 0.018], r: 0.0068, splay: 0.11 },  // little
 ];
 
 // curl per finger [index, middle, ring, little], thumb curl, thumb opposition, spread
@@ -17,12 +17,32 @@ const POSES = {
   relaxed: { c: [0.32, 0.38, 0.44, 0.5], t: 0.25, o: 0.2, s: 0.3 },
   open:    { c: [0.06, 0.05, 0.07, 0.1], t: 0.05, o: 0.0, s: 1.0 },
   point:   { c: [0.0, 0.85, 0.9, 0.92], t: 0.6, o: 0.6, s: 0.1 },
-  grip:    { c: [0.62, 0.66, 0.7, 0.72], t: 0.5, o: 0.9, s: 0.2 },
-  pinch:   { c: [0.45, 0.6, 0.75, 0.8], t: 0.45, o: 1.0, s: 0.1 },
-  hold:    { c: [0.5, 0.52, 0.55, 0.6], t: 0.35, o: 0.7, s: 0.4 },
+  grip:    { c: [0.48, 0.52, 0.56, 0.6], t: 0.42, o: 0.85, s: 0.35 },
+  pinch:   { c: [0.36, 0.5, 0.62, 0.68], t: 0.4, o: 1.0, s: 0.25 },
+  hold:    { c: [0.34, 0.37, 0.42, 0.48], t: 0.3, o: 0.65, s: 0.5 },
+  strum:   { c: [0.25, 0.4, 0.5, 0.55], t: 0.2, o: 0.5, s: 0.3 },
 };
 
-const capsule = (r, L) => { const g = new THREE.CapsuleGeometry(r, Math.max(0.001, L - r * 1.2), 6, 10); g.rotateX(-Math.PI / 2); g.translate(0, 0, -L / 2); return g; };
+// a tapered finger segment: slightly flattened, thicker at the joint, rounded tip on the last one
+const capsule = (r, L, tip = false, taper = 0.86) => {
+  const pts = [];
+  const n = 10;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    let rr = r * (1 - (1 - taper) * t);
+    rr *= 1 + Math.exp(-Math.pow((t - 0.08) * 9, 2)) * 0.08; // knuckle swell
+    if (t < 0.12) rr *= Math.sqrt(Math.max(0, t / 0.12)) * 0.4 + 0.6;
+    if (tip && t > 0.7) rr *= Math.sqrt(Math.max(0, 1 - Math.pow((t - 0.7) / 0.3, 2)));
+    pts.push(new THREE.Vector2(Math.max(0.0004, rr), -t * L));
+  }
+  if (!tip) pts.push(new THREE.Vector2(0.0004, -L - r * 0.15));
+  pts.unshift(new THREE.Vector2(0.0004, r * 0.25));
+  const g = new THREE.LatheGeometry(pts, 12);
+  g.scale(1, 1, 0.82); // fingers are a little flatter than round
+  g.rotateX(Math.PI / 2);
+  g.scale(1, 1, 1);
+  return g;
+};
 const ease = (t) => t * t * (3 - 2 * t);
 
 function buildHand(T, skinMat, sleeveMat, nailMat) {
@@ -30,7 +50,7 @@ function buildHand(T, skinMat, sleeveMat, nailMat) {
   const wrist = new THREE.Group(); root.add(wrist);
   const add = (geo, mat, parent, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = false; m.receiveShadow = true; m.frustumCulled = false; parent.add(m); return m; };
   // palm: slightly tapered rounded block, thicker at the heel
-  const palmG = new RoundedBoxGeometry(0.078, 0.028, 0.092, 4, 0.012);
+  const palmG = new RoundedBoxGeometry(0.074, 0.024, 0.09, 4, 0.011);
   const pp = palmG.attributes.position;
   for (let i = 0; i < pp.count; i++) {
     const z = pp.getZ(i), y = pp.getY(i), x = pp.getX(i);
@@ -48,13 +68,13 @@ function buildHand(T, skinMat, sleeveMat, nailMat) {
   // knuckle bumps
   const fingers = [];
   for (const f of FINGERS) {
-    add(new THREE.SphereGeometry(f.r * 1.15, 10, 8), skinMat, wrist, f.x, 0.006, f.z + 0.004).scale.set(1, 0.8, 1);
+    add(new THREE.SphereGeometry(f.r * 1.05, 10, 8), skinMat, wrist, f.x, 0.004, f.z + 0.004).scale.set(1, 0.65, 1);
     const base = new THREE.Group(); base.position.set(f.x, 0.002, f.z); base.rotation.y = -f.splay; wrist.add(base);
     const joints = [base];
     let parent = base;
     f.L.forEach((L, i) => {
-      const r = f.r * (1 - i * 0.1);
-      add(capsule(r, L), skinMat, parent);
+      const r = f.r * (1 - i * 0.12);
+      add(capsule(r, L, i === 2), skinMat, parent);
       if (i === 2) { const nail = add(new RoundedBoxGeometry(r * 1.5, 0.002, L * 0.55, 2, 0.0008), nailMat, parent, 0, r * 0.82, -L * 0.62); nail.rotation.x = 0.05; }
       if (i < 2) { const j = new THREE.Group(); j.position.z = -L + r * 0.3; parent.add(j); joints.push(j); parent = j; }
     });
@@ -64,9 +84,9 @@ function buildHand(T, skinMat, sleeveMat, nailMat) {
   const tb = new THREE.Group(); tb.position.set(-0.034, -0.006, -0.018); wrist.add(tb);
   const tJoints = [tb];
   let par = tb;
-  [0.036, 0.03, 0.025].forEach((L, i) => {
-    const r = 0.0118 - i * 0.0012;
-    add(capsule(r, L), skinMat, par);
+  [0.034, 0.029, 0.024].forEach((L, i) => {
+    const r = 0.0108 - i * 0.0011;
+    add(capsule(r, L, i === 2), skinMat, par);
     if (i === 2) add(new RoundedBoxGeometry(r * 1.5, 0.002, L * 0.5, 2, 0.0008), nailMat, par, 0, r * 0.8, -L * 0.6);
     if (i < 2) { const j = new THREE.Group(); j.position.z = -L + r * 0.3; par.add(j); tJoints.push(j); par = j; }
   });
@@ -105,10 +125,21 @@ export class Hands {
     this.L.pos.x = -0.24;
     this.reachState = null;
     this.t = 0;
+    // the pocket player, held in the left hand when you use it
+    const dev = (this.device = new THREE.Group());
+    const body = new THREE.Mesh(new RoundedBoxGeometry(0.058, 0.098, 0.011, 3, 0.008), new THREE.MeshPhysicalMaterial({ color: 0xe8e4dc, roughness: 0.3, clearcoat: 0.6 }));
+    this.devScreen = new THREE.MeshStandardMaterial({ color: 0x15201f, emissive: 0x6ad0a8, emissiveIntensity: 0.15, roughness: 0.2 });
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.046, 0.034), this.devScreen); screen.position.set(0, 0.024, 0.0058);
+    const wheel = new THREE.Mesh(new THREE.CircleGeometry(0.019, 24), new THREE.MeshStandardMaterial({ color: 0xd5d0c5, roughness: 0.5 })); wheel.position.set(0, -0.021, 0.0058);
+    dev.add(body, screen, wheel);
+    dev.position.set(-0.004, 0.012, -0.055); dev.rotation.set(-Math.PI / 2, 0, 0);
+    this.L.wrist.add(dev); dev.visible = false; dev.scale.x = -1;
     this.tmp = new THREE.Vector3();
     this.e = new THREE.Euler();
     this.qi = new THREE.Quaternion(); this.zAxis = new THREE.Vector3(0, 0, 1);
   }
+
+  strum() { this.strumT = 0.35; }
 
   /** Animate a reach toward a world point; callback fires when the hand arrives. */
   reach(worldPoint, kind, onArrive) {
@@ -158,6 +189,15 @@ export class Hands {
       rPose = 'open'; lPose = 'open';
     } else if (s.mode === 'seat' || s.mode === 'scope') {
       rPos = new THREE.Vector3(0.26, -0.75, -0.3); rRot = [0, 0, 0];
+    } else if (s.held && s.held.instrument) {
+      // guitar: right hand over the sound hole strumming, left hand on the neck
+      const m = s.held.mesh;
+      const hole = this.camera.worldToLocal(m.localToWorld(new THREE.Vector3(0, 0.12, 0.09)));
+      const neck = this.camera.worldToLocal(m.localToWorld(new THREE.Vector3(0, 0.78, 0.06)));
+      this.strumT = Math.max(0, (this.strumT || 0) - dt);
+      const sw = this.strumT > 0 ? Math.sin((0.35 - this.strumT) / 0.35 * Math.PI) : 0;
+      rPos = hole.add(this.tmp.set(0.04, 0.05 - sw * 0.1, 0.06)); rRot = [0.5 + sw * 0.4, 0.2, -0.9]; rPose = 'strum';
+      lPos = neck.add(this.tmp.set(-0.02, -0.04, 0.05)); lRot = [0.3, -0.6, -1.3]; lPose = 'grip';
     } else if (s.held) {
       const it = s.held, m = it.mesh, sz = Math.min(0.5, it.size);
       const ip = this.camera.worldToLocal(m.position.clone());
@@ -183,6 +223,11 @@ export class Hands {
       rPos = new THREE.Vector3(0.23, -0.4, -0.4); rRot = [0.15, 0.15, -0.35]; rPose = 'relaxed';
     } else {
       rPos = new THREE.Vector3(0.25, -0.66, -0.32); rRot = [0.2, 0.15, -0.3];
+    }
+    this.device.visible = !!s.music;
+    if (s.music) {
+      lPos = new THREE.Vector3(-0.09, -0.19, -0.33); lRot = [1.15, -0.2, 0.3]; lPose = 'hold';
+      this.devScreen.emissiveIntensity = s.musicOn ? 0.6 + Math.sin(this.t * 2) * 0.05 : 0.15;
     }
     if (!s.held && !this.reachState && !s.swim) { rPos.x += bobX; rPos.y += bobY + sway; lPos.x += bobX; lPos.y += bobY; }
 

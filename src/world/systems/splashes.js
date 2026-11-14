@@ -9,7 +9,7 @@ export class Splashes {
     this.pos = new Float32Array(n * 3); this.vel = new Float32Array(n * 3);
     this.life = new Float32Array(n); this.size = new Float32Array(n); this.alpha = new Float32Array(n);
     this.floor = new Float32Array(n).fill(-100);
-    this.kind = new Uint8Array(n); // 0 droplet, 1 drip (falls, then makes a tiny splash)
+    this.kind = new Uint8Array(n); // 0 droplet, 1 drip (falls, then makes a tiny splash), 2 bubble (rises)
     const g = new THREE.BufferGeometry();
     this.pa = new THREE.BufferAttribute(this.pos, 3); this.pa.setUsage(THREE.DynamicDrawUsage);
     this.aa = new THREE.BufferAttribute(this.alpha, 1); this.aa.setUsage(THREE.DynamicDrawUsage);
@@ -49,15 +49,21 @@ export class Splashes {
   /** A single falling drop that splashes when it reaches floorY. */
   drip(x, y, z, floorY) { this.spawn(x, y, z, 0, -0.5, 0, 0.014, 3, 1, floorY); }
 
+  bubbles(p, n = 6) { for (let i = 0; i < n; i++) this.spawn(p.x + (Math.random() - 0.5) * 0.3, p.y + (Math.random() - 0.5) * 0.2, p.z + (Math.random() - 0.5) * 0.3, 0, 0.2, 0, 0.01 + Math.random() * 0.015, 4, 2); }
+
   update(dt, light) {
     this.u.uLight.value.copy(light);
     const P = this.pos, V = this.vel;
     for (let i = 0; i < this.n; i++) {
       if (this.life[i] <= 0) { this.alpha[i] = 0; continue; }
       this.life[i] -= dt;
-      V[i * 3 + 1] -= 9.8 * dt;
+      if (this.kind[i] === 2) {
+        V[i * 3 + 1] = Math.min(0.9, V[i * 3 + 1] + dt * 1.5);
+        V[i * 3] = Math.sin(this.life[i] * 9 + i) * 0.08; V[i * 3 + 2] = Math.cos(this.life[i] * 7 + i) * 0.08;
+        if (P[i * 3 + 1] > WATER_LEVEL - 0.03) { this.life[i] = 0; continue; }
+      } else V[i * 3 + 1] -= 9.8 * dt;
       P[i * 3] += V[i * 3] * dt; P[i * 3 + 1] += V[i * 3 + 1] * dt; P[i * 3 + 2] += V[i * 3 + 2] * dt;
-      if (P[i * 3 + 1] < this.floor[i]) {
+      if (this.kind[i] !== 2 && P[i * 3 + 1] < this.floor[i]) {
         if (this.kind[i] === 1) {
           // a drip landing: a few tiny droplets
           const x = P[i * 3], y = this.floor[i], z = P[i * 3 + 2];

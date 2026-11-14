@@ -75,6 +75,38 @@
     <div id="hint"><span id="hint-key">E</span><span id="hint-text"></span></div>
     <div id="toast"></div>
     <div id="fade"></div>
+    <div id="scope-mask"></div>
+    <div id="player" aria-label="Music player">
+      <div class="device">
+        <div class="screen">
+          <div class="np"><span id="pl-state">Paused</span><span id="pl-num"></span></div>
+          <div id="pl-title">—</div>
+          <div class="artist">generated lo-fi · somewhere else</div>
+          <div class="pbar"><div id="pl-prog"></div></div>
+          <div class="ptime"><span id="pl-time">0:00</span><span id="pl-dur">0:00</span></div>
+        </div>
+        <div class="wheel">
+          <button id="pl-nature" title="Nature sounds">nature</button>
+          <button id="pl-prev" title="Previous">⏮</button>
+          <button id="pl-next" title="Next">⏭</button>
+          <button id="pl-play" title="Play / pause">⏯</button>
+          <div class="hub"></div>
+        </div>
+        <label class="vol">vol <input id="pl-vol" type="range" min="0" max="1" step="0.01" value="0.75" /></label>
+        <div class="keys">Space play · ← → tracks · M put away</div>
+      </div>
+    </div>
+    <div id="paper" role="dialog" aria-label="Paper">
+      <div class="sheet">
+        <h2 id="paper-title"></h2>
+        <div id="paper-edit" hidden>
+          <textarea id="paper-text" rows="5" placeholder="Today I…"></textarea>
+          <button id="paper-save" class="ghost">Write it down</button>
+        </div>
+        <div id="paper-body"></div>
+        <button id="paper-close" class="ghost">Put it away</button>
+      </div>
+    </div>
     <div id="menu" role="dialog" aria-label="Pause menu">
       <div class="menu-card">
         <div class="menu-head"><h2>Somewhere Else</h2><button id="menu-resume" class="enter small"><span>Return</span></button></div>
@@ -122,6 +154,8 @@
         <button class="tbtn" id="tb-drop">Drop</button>
       </div>
       <button class="tbtn menu-btn" id="tb-menu">☰</button>
+      <button class="tbtn view-btn" id="tb-view">View</button>
+      <button class="tbtn music-btn" id="tb-music">♪</button>
     </div>
   </div>
   <script type="module" src="./src/main.js"></script>

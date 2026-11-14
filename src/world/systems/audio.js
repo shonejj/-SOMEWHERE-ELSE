@@ -35,7 +35,9 @@ export class AudioEngine {
     const ctx = this.ctx;
     this.master = ctx.createGain(); this.master.gain.value = 0.8;
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 3;
-    this.master.connect(comp).connect(ctx.destination);
+    this.uw = ctx.createBiquadFilter(); this.uw.type = 'lowpass'; this.uw.frequency.value = 20000; this.uw.Q.value = 0.5;
+    this.master.connect(this.uw).connect(comp).connect(ctx.destination);
+    this.musicBus = ctx.createGain(); this.musicBus.connect(comp); // the music player bypasses the world (it's in your ears)
     this.sfx = ctx.createGain(); this.sfx.connect(this.master);
     this.white = noiseBuffer(ctx, 3, 'white');
     this.pink = noiseBuffer(ctx, 4, 'pink');
@@ -48,6 +50,12 @@ export class AudioEngine {
     this.indoor = 0;
   }
 
+  setUnderwater(on) {
+    if (on === this._under) return; this._under = on;
+    const t = this.ctx.currentTime;
+    this.uw.frequency.setTargetAtTime(on ? 520 : 20000, t, 0.08);
+    if (on) this.noiseHit(null, { buf: this.brown, type: 'lowpass', f: 300, a: 0.05, d: 0.6, v: 0.5 });
+  }
   resume() { if (this.ctx.state !== 'running') this.ctx.resume(); }
   setVolume(v) { this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.1); }
   get now() { return this.ctx.currentTime; }
@@ -101,14 +109,6 @@ export class AudioEngine {
     const rsf = this.filter('highpass', 2500), rsg = this.gain(0);
     this.chain(rust, rsf, rsg, this.master); rust.start();
     L.rustle = { g: rsg };
-    // crickets: amplitude-modulated high tone
-    const cr = this.ctx.createOscillator(); cr.frequency.value = 4400; cr.type = 'sine';
-    const crAm = this.gain(0), lfo = this.ctx.createOscillator(); lfo.frequency.value = 28;
-    const lfoG = this.gain(0.5); lfo.connect(lfoG).connect(crAm.gain);
-    const crG = this.gain(0);
-    this.chain(cr, crAm, crG, this.master); cr.start(); lfo.start();
-    const lfo2 = this.ctx.createOscillator(); lfo2.frequency.value = 0.9; const lfo2g = this.gain(0.5); lfo2.connect(lfo2g).connect(crG.gain); lfo2.start();
-    L.crickets = { g: crG, base: 0 };
     // lake lapping (positional on the nearest shore point)
     const lap = this.src(this.brown, true, 1.0);
     const lapF = this.filter('lowpass', 500), lapAm = this.gain(0.5), lapG = this.gain(0);
@@ -129,13 +129,17 @@ export class AudioEngine {
     L.wind.g.gain.setTargetAtTime((0.04 + s.wind * 0.3) * (1 - muffle * 0.7), t, 0.5);
     L.wind.f.frequency.setTargetAtTime(300 + s.wind * 600 + Math.sin(t * 0.3) * 150, t, 0.5);
     L.rustle.g.gain.setTargetAtTime(s.wind * 0.05 * (1 - muffle * 0.9) * (s.forest ?? 1), t, 0.4);
-    L.crickets.g.gain.setTargetAtTime(s.night * (1 - s.rain) * 0.015 * (1 - muffle * 0.85), t, 1.5);
     L.lap.g.gain.setTargetAtTime((0.25 + s.wind * 0.3) * (1 - muffle * 0.8), t, 0.5);
     if (s.shorePos) this.setPos(L.lap.p, s.shorePos);
 
     // occasional creatures
     const T = this.timers;
-    T.bird -= dt; T.owl -= dt; T.frog -= dt; T.creak -= dt;
+    T.bird -= dt; T.owl -= dt; T.frog -= dt; T.creak -= dt; T.cricket -= dt;
+    // a few individual crickets on warm, dry nights only — never a constant drone
+    if (T.cricket <= 0) {
+      T.cricket = 2.5 + R() * 6;
+      if (s.night > 0.75 && s.rain < 0.1 && s.wind < 0.6 && s.listenerPos && R() < 0.6) this.cricket(s.listenerPos, 1 - muffle * 0.85);
+    }
     if (T.bird <= 0) {
       T.bird = 0.8 + R() * 4 * (1 + s.rain * 3);
       if (s.daylight > 0.3 && s.rain < 0.7 && s.trees) this.birdCall(s.trees(), 1 - muffle * 0.8, s.rain);
@@ -264,6 +268,12 @@ export class AudioEngine {
       this.tone(pos, { f, slide: 0.9, d: 0.15, v, ref: 6 });
       for (let i = 0; i < 3; i++) this.tone(pos, { f: f * 0.55, slide: 0.95, d: 0.1, v: v * 0.7, delay: 0.2 + i * 0.13, ref: 6 });
     }
+  }
+  cricket(near, vol = 1) {
+    const a = R() * Math.PI * 2, r = 6 + R() * 18;
+    const pos = new THREE.Vector3(near.x + Math.cos(a) * r, near.y - 1.2, near.z + Math.sin(a) * r);
+    const f = 3900 + R() * 900, chirps = 2 + Math.floor(R() * 3);
+    for (let c = 0; c < chirps; c++) for (let p = 0; p < 3; p++) this.tone(pos, { f, a: 0.003, d: 0.018, v: 0.012 * vol, delay: c * 0.32 + p * 0.035, ref: 3 });
   }
   owl(pos) {
     const f = 380 + R() * 40;

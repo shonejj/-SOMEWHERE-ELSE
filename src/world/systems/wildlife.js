@@ -2,42 +2,11 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/noise.js';
 import { WATER_LEVEL, LAKE, CABIN, WORLD_RADIUS, DOCK } from '../core/layout.js';
-import { lakeE } from '../env/terrain.js';
+import { lakeE, forestDensity } from '../env/terrain.js';
+import { deerModel, duckModel, rabbitModel, fishSchool } from './creatures.js';
 
 const rnd = mulberry32(4242);
 const v3 = () => new THREE.Vector3();
-
-function deerModel() {
-  const g = new THREE.Group();
-  const coat = new THREE.MeshStandardMaterial({ color: 0x8a5a36, roughness: 0.9 });
-  const light = new THREE.MeshStandardMaterial({ color: 0xcdb08a, roughness: 0.9 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x1a1410, roughness: 0.5 });
-  const add = (geo, mat, x, y, z, parent = g) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; parent.add(m); return m; };
-  const body = add(new THREE.SphereGeometry(0.5, 16, 12), coat, 0, 1.0, 0); body.scale.set(0.62, 0.62, 1.25);
-  const belly = add(new THREE.SphereGeometry(0.45, 12, 10), light, 0, 0.92, 0); belly.scale.set(0.55, 0.5, 1.15);
-  const neckPivot = new THREE.Group(); neckPivot.position.set(0, 1.18, -0.48); g.add(neckPivot);
-  const neck = add(new THREE.CylinderGeometry(0.1, 0.15, 0.6, 10), coat, 0, 0.25, -0.08, neckPivot); neck.rotation.x = -0.45;
-  const head = new THREE.Group(); head.position.set(0, 0.55, -0.22); neckPivot.add(head);
-  const skull = add(new THREE.SphereGeometry(0.13, 12, 10), coat, 0, 0, 0, head); skull.scale.set(0.9, 0.9, 1.3);
-  const snout = add(new THREE.ConeGeometry(0.075, 0.24, 10), coat, 0, -0.04, -0.2, head); snout.rotation.x = -Math.PI / 2 - 0.2;
-  add(new THREE.SphereGeometry(0.03, 6, 6), dark, 0, -0.07, -0.31, head);
-  for (const s of [-1, 1]) {
-    const ear = add(new THREE.ConeGeometry(0.05, 0.16, 6), coat, s * 0.09, 0.12, 0.05, head); ear.rotation.z = -s * 0.7; ear.scale.z = 0.4;
-    add(new THREE.SphereGeometry(0.02, 6, 6), dark, s * 0.08, 0.03, -0.08, head);
-  }
-  const tail = add(new THREE.ConeGeometry(0.06, 0.18, 8), light, 0, 1.08, 0.62); tail.rotation.x = 2.4;
-  const legs = [];
-  for (const [x, z] of [[-0.17, -0.42], [0.17, -0.42], [-0.17, 0.45], [0.17, 0.45]]) {
-    const hip = new THREE.Group(); hip.position.set(x, 0.95, z); g.add(hip);
-    const up = add(new THREE.CylinderGeometry(0.06, 0.045, 0.45, 8), coat, 0, -0.22, 0, hip);
-    const knee = new THREE.Group(); knee.position.set(0, -0.44, 0); hip.add(knee);
-    add(new THREE.CylinderGeometry(0.035, 0.025, 0.48, 6), coat, 0, -0.24, 0, knee);
-    add(new THREE.SphereGeometry(0.035, 6, 4), dark, 0, -0.48, 0, knee);
-    legs.push({ hip, knee });
-  }
-  g.userData = { legs, neckPivot, head, tail };
-  return g;
-}
 
 function birdModel(mat) {
   const g = new THREE.Group();
@@ -50,19 +19,6 @@ function birdModel(mat) {
   return g;
 }
 
-function duckModel() {
-  const g = new THREE.Group();
-  const brown = new THREE.MeshStandardMaterial({ color: 0x6a5240, roughness: 0.8 });
-  const green = new THREE.MeshStandardMaterial({ color: 0x1f4a2a, roughness: 0.4 });
-  const yel = new THREE.MeshStandardMaterial({ color: 0xd8a020, roughness: 0.5 });
-  const b = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8), brown); b.scale.set(0.8, 0.6, 1.3); b.position.y = 0.05; g.add(b);
-  const h = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), green); h.position.set(0, 0.2, -0.15); g.add(h);
-  const k = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.08, 6), yel); k.rotation.x = -Math.PI / 2; k.position.set(0, 0.19, -0.24); g.add(k);
-  const t = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.1, 6), brown); t.rotation.x = 2.2; t.position.set(0, 0.1, 0.2); g.add(t);
-  g.userData.head = h;
-  return g;
-}
-
 export class Wildlife {
   constructor(ctx) {
     this.ctx = ctx;
@@ -72,7 +28,7 @@ export class Wildlife {
     this.deer = [];
     const homes = [[22, -8], [-26, 8], [36, 20]];
     for (let i = 0; i < 4; i++) {
-      const m = deerModel(); const [hx, hz] = homes[i % homes.length];
+      const m = deerModel(i === 0, ctx.T); const [hx, hz] = homes[i % homes.length];
       const d = { m, pos: new THREE.Vector3(hx + rnd() * 8, 0, hz + rnd() * 8), yaw: rnd() * 6, state: 'graze', t: 3 + rnd() * 5, target: new THREE.Vector3(), speed: 0, phase: rnd() * 6, home: new THREE.Vector2(hx, hz), head: 0 };
       if (i === 3) d.m.scale.setScalar(0.75); // a fawn
       scene.add(m); this.deer.push(d);
@@ -84,7 +40,7 @@ export class Wildlife {
     this.flockT = 0; this.flockAlt = 0;
     // ducks
     this.ducks = [];
-    for (let i = 0; i < 3; i++) { const d = duckModel(); scene.add(d); this.ducks.push({ m: d, a: rnd() * 6, r: 6 + rnd() * 8, c: new THREE.Vector2(DOCK.x + 6 + i * 3, 40 + i * 4), sp: 0.04 + rnd() * 0.03, quack: 8 + rnd() * 20 }); }
+    for (let i = 0; i < 4; i++) { const d = duckModel(i % 2 === 0); scene.add(d); this.ducks.push({ m: d, a: rnd() * 6, r: 6 + rnd() * 8, c: new THREE.Vector2(DOCK.x + 6 + i * 3, 40 + i * 4), sp: 0.04 + rnd() * 0.03, quack: 8 + rnd() * 20 }); }
     // fireflies
     const n = 140, seeds = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
@@ -100,8 +56,8 @@ export class Wildlife {
         void main(){ vec3 p = position; float s = p.x * 1.7 + p.z * 2.3;
           p += vec3(sin(uTime * 0.31 + s) * 1.6, sin(uTime * 0.53 + s * 1.3) * 0.5, cos(uTime * 0.27 + s * 0.7) * 1.6);
           float blink = smoothstep(0.55, 1.0, sin(uTime * (0.8 + fract(s) * 1.4) + s * 5.0));
-          vA = blink * uAmount; vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_PointSize = 90.0 / -mv.z; gl_Position = projectionMatrix * mv; }`,
-      fragmentShader: `varying float vA; void main(){ float d = length(gl_PointCoord - 0.5); gl_FragColor = vec4(0.75, 1.0, 0.35, smoothstep(0.5, 0.0, d) * vA); }`,
+          vA = blink * uAmount; vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_PointSize = 150.0 / -mv.z; gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `varying float vA; void main(){ float d = length(gl_PointCoord - 0.5); float core = smoothstep(0.12, 0.0, d); float halo = smoothstep(0.5, 0.0, d) * 0.35; gl_FragColor = vec4(mix(vec3(0.7, 1.0, 0.3), vec3(1.0, 1.0, 0.8), core), (core + halo) * vA); }`,
     }));
     this.flies.frustumCulled = false; scene.add(this.flies);
     // ripple rings (rain + fish)
@@ -111,10 +67,22 @@ export class Wildlife {
     for (let i = 0; i < 70; i++) { const m = new THREE.Mesh(rg, ringMat.clone()); m.visible = false; scene.add(m); this.rings.push({ m, life: 0, size: 1 }); }
     this.ringIdx = 0;
     // a fish
-    this.fish = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 6), new THREE.MeshStandardMaterial({ color: 0x8a9a8a, roughness: 0.3, metalness: 0.4 }));
-    this.fish.scale.set(0.5, 0.7, 2.2); this.fish.visible = false; scene.add(this.fish);
+    this.jumper = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 6), new THREE.MeshStandardMaterial({ color: 0x8a9a8a, roughness: 0.3, metalness: 0.4 }));
+    this.jumper.scale.set(0.5, 0.7, 2.2); this.jumper.visible = false; scene.add(this.jumper);
     this.fishT = 8; this.fishJump = null;
 
+    // rabbits in the meadows
+    this.rabbits = [];
+    for (let i = 0; i < 6; i++) {
+      const m = rabbitModel(); scene.add(m);
+      let x = 0, z = 0;
+      for (let k = 0; k < 30; k++) { x = (rnd() - 0.5) * 70; z = rnd() * 50 - 15; if (this.h(x, z) > WATER_LEVEL + 0.3 && Math.abs(x) > 9 && forestDensity(x, z) < 0.5) break; }
+      this.rabbits.push({ m, pos: new THREE.Vector3(x, 0, z), yaw: rnd() * 6, t: rnd() * 3, hop: 0, hopping: false, flee: 0, target: new THREE.Vector3(x, 0, z) });
+    }
+    // a school of fish in the lake
+    this.fish = fishSchool(scene, 36, ctx.T);
+    this.fishData = Array.from({ length: 36 }, (_, i) => ({ a: rnd() * 6.28, r: 4 + rnd() * 18, c: new THREE.Vector2(LAKE.x + (rnd() - 0.5) * 30, LAKE.z + (rnd() - 0.5) * 20), d: 0.6 + rnd() * 2.2, sp: (0.25 + rnd() * 0.35) * (rnd() < 0.5 ? 1 : -1) }));
+    this.fishM = new THREE.Matrix4(); this.fishQ = new THREE.Quaternion(); this.fishS = new THREE.Vector3(1, 1, 1);
     // butterflies over the meadow
     const wingG = new THREE.BufferGeometry();
     wingG.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.012, 0.05, 0, 0.03, 0.055, 0, -0.005, 0, 0, -0.012, 0.04, 0, -0.035], 3));
@@ -184,7 +152,7 @@ export class Wildlife {
     for (const d of this.deer) {
       const dist = Math.hypot(d.pos.x - pp.x, d.pos.z - pp.z);
       d.t -= dt;
-      const crouchQuiet = player.crouching ? 0.55 : 1;
+      const crouchQuiet = player.crouching ? 0.55 : 1; this.crouchQuiet = player.crouching;
       if (d.state !== 'flee' && dist < 11 * crouchQuiet && !(player.mode === 'seat')) {
         d.state = 'flee'; d.t = 3 + rnd() * 2;
         const a = Math.atan2(d.pos.x - pp.x, d.pos.z - pp.z) + (rnd() - 0.5) * 0.8;
@@ -264,7 +232,9 @@ export class Wildlife {
       const nx = d.c.x + Math.cos(d.a + 0.05) * d.r, nz = d.c.y + Math.sin((d.a + 0.05) * 1.3) * d.r * 0.6;
       d.m.position.set(x, WATER_LEVEL + Math.sin(t * 2 + d.a * 10) * 0.01, z);
       d.m.rotation.y = Math.atan2(-(nx - x), -(nz - z));
-      d.m.userData.head.position.y = 0.2 + Math.max(0, Math.sin(t * 0.7 + d.r)) * 0.02;
+      const dab = Math.max(0, Math.sin(t * 0.23 + d.r * 3)) > 0.92; // dabbling: tip forward, tail up
+      d.m.rotation.x += ((dab ? -1.1 : 0) - d.m.rotation.x) * Math.min(1, dt * 3);
+      d.m.userData.neck.rotation.x = Math.sin(t * 1.3 + d.r) * 0.08;
       d.quack -= dt;
       if (d.quack < 0) {
         d.quack = 12 + rnd() * 30;
@@ -302,14 +272,56 @@ export class Wildlife {
       const f = this.fishJump; f.t += dt;
       const k = f.t / 0.7;
       if (f.t === dt) { this.ring(f.x, f.z, 0.5, 0.7); this.ctx.splashes?.burst({ x: f.x, z: f.z }, 0.6, 14); audio?.splash(new THREE.Vector3(f.x, WATER_LEVEL, f.z), 0.5); }
-      this.fish.visible = k < 1;
-      this.fish.position.set(f.x + Math.sin(f.yaw) * k * 0.8, WATER_LEVEL + Math.sin(k * Math.PI) * 0.6, f.z + Math.cos(f.yaw) * k * 0.8);
-      this.fish.rotation.set(-Math.cos(k * Math.PI) * 1.0, f.yaw, 0);
-      if (k >= 1) { this.ring(this.fish.position.x, this.fish.position.z, 0.6, 0.7); this.ctx.splashes?.burst(this.fish.position, 0.8, 18); audio?.splash(this.fish.position, 0.6); this.fishJump = null; this.fish.visible = false; }
+      this.jumper.visible = k < 1;
+      this.jumper.position.set(f.x + Math.sin(f.yaw) * k * 0.8, WATER_LEVEL + Math.sin(k * Math.PI) * 0.6, f.z + Math.cos(f.yaw) * k * 0.8);
+      this.jumper.rotation.set(-Math.cos(k * Math.PI) * 1.0, f.yaw, 0);
+      if (k >= 1) { this.ring(this.jumper.position.x, this.jumper.position.z, 0.6, 0.7); this.ctx.splashes?.burst(this.jumper.position, 0.8, 18); audio?.splash(this.jumper.position, 0.6); this.fishJump = null; this.jumper.visible = false; }
     }
   }
 
   updateSmall(dt, t, pp, day, w) {
+    // fish
+    this.fish.u.uTime.value = t;
+    this.fishData.forEach((f, i) => {
+      f.a += dt * f.sp / Math.max(2, f.r) * 2;
+      const x = f.c.x + Math.cos(f.a) * f.r, z = f.c.y + Math.sin(f.a) * f.r * 0.7;
+      const floor = this.h(x, z);
+      const y = Math.max(floor + 0.25, WATER_LEVEL - f.d) + Math.sin(t * 0.7 + i) * 0.08;
+      const tx = -Math.sin(f.a) * Math.sign(f.sp), tz = Math.cos(f.a) * 0.7 * Math.sign(f.sp);
+      this.fishQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(-tx, -tz) + Math.PI);
+      this.fishS.setScalar(0.8 + (i % 5) * 0.15);
+      this.fishM.compose(new THREE.Vector3(x, floor > WATER_LEVEL - 0.4 ? -50 : y, z), this.fishQ, this.fishS);
+      this.fish.mesh.setMatrixAt(i, this.fishM);
+    });
+    this.fish.mesh.instanceMatrix.needsUpdate = true;
+    // rabbits: nibble, look up, hop a little, bolt if you come close
+    for (const r of this.rabbits) {
+      const dist = Math.hypot(r.pos.x - pp.x, r.pos.z - pp.z);
+      r.m.visible = dist < 90;
+      if (!r.m.visible) continue;
+      r.t -= dt;
+      if (dist < (this.crouchQuiet ? 3.5 : 7) && r.flee <= 0) {
+        r.flee = 3; const a = Math.atan2(r.pos.x - pp.x, r.pos.z - pp.z);
+        r.target.set(r.pos.x + Math.sin(a) * 14, 0, r.pos.z + Math.cos(a) * 14);
+      }
+      if (r.flee > 0) r.flee -= dt;
+      if (!r.hopping && (r.flee > 0 || r.t <= 0)) {
+        r.hopping = true; r.hop = 0;
+        if (r.flee <= 0) { r.t = 1.5 + rnd() * 5; const a = rnd() * 6.28; r.target.set(r.pos.x + Math.cos(a) * 1.5, 0, r.pos.z + Math.sin(a) * 1.5); }
+        const dx = r.target.x - r.pos.x, dz = r.target.z - r.pos.z; r.yaw = Math.atan2(-dx, -dz);
+      }
+      if (r.hopping) {
+        r.hop += dt * (r.flee > 0 ? 3.2 : 2.2);
+        const sp = r.flee > 0 ? 4.5 : 1.4;
+        const nx = r.pos.x - Math.sin(r.yaw) * sp * dt, nz = r.pos.z - Math.cos(r.yaw) * sp * dt;
+        if (this.h(nx, nz) > WATER_LEVEL + 0.2) { r.pos.x = nx; r.pos.z = nz; }
+        if (r.hop >= 1) { r.hopping = r.flee > 0 && Math.hypot(r.target.x - r.pos.x, r.target.z - r.pos.z) > 1; r.hop = 0; }
+      }
+      const jump = r.hopping ? Math.sin(r.hop * Math.PI) * 0.12 : 0;
+      r.m.position.set(r.pos.x, this.h(r.pos.x, r.pos.z) + jump, r.pos.z);
+      r.m.rotation.set(r.hopping ? -Math.cos(r.hop * Math.PI) * 0.3 : 0, r.yaw, 0);
+      r.m.userData.head.rotation.x = r.hopping ? 0 : (Math.sin(t * 0.8 + r.yaw * 9) > 0.3 ? 0.5 : -0.1); // nibbling / alert
+    }
     const out = day > 0.35 && w.rain < 0.3;
     for (const b of this.butterflies) {
       b.g.visible = out && Math.hypot(b.home.x - pp.x, b.home.z - pp.z) < 70;

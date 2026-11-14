@@ -68,9 +68,41 @@ export class Body {
     add(new THREE.TorusGeometry(0.15, 0.014, 6, 30).rotateX(Math.PI / 2).scale(1.18, 1, 0.74), sweater, spine, 0, 0.0, 0);
     add(new THREE.TorusGeometry(0.065, 0.016, 6, 20).rotateX(Math.PI / 2), sweater, spine, 0, 0.51, 0);
     const head = (this.head = new THREE.Group()); head.position.set(0, 0.6, 0); spine.add(head);
-    add(new THREE.CylinderGeometry(0.05, 0.055, 0.12, 12), ghost(skin), head, 0, -0.06, 0);
-    const skull = add(new THREE.SphereGeometry(0.1, 18, 14), ghost(skin), head, 0, 0.07, -0.01); skull.scale.set(0.9, 1.12, 1.05);
-    add(new THREE.SphereGeometry(0.104, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), ghost(skin), head, 0, 0.08, 0.005).scale.set(0.92, 1.1, 1.08);
+    // head parts: hidden from your own eyes in first person, but they still cast a shadow,
+    // and become visible in the third-person view
+    const hair = new THREE.MeshStandardMaterial({ color: 0x3a2a1e, roughness: 0.75, map: T.knit.map });
+    const eyeW = new THREE.MeshStandardMaterial({ color: 0xf2eee8, roughness: 0.2 });
+    const iris = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.1 });
+    const lip = new THREE.MeshStandardMaterial({ color: 0xb87a6e, roughness: 0.5 });
+    this.headMeshes = [];
+    const hm = (geo, mat, x, y, z) => { const m = add(geo, mat, head, x, y, z); this.headMeshes.push(m); return m; };
+    hm(new THREE.CylinderGeometry(0.052, 0.058, 0.12, 14), skin, 0, -0.06, 0.005);
+    const skullG = new THREE.SphereGeometry(0.1, 28, 22);
+    const sp = skullG.attributes.position;
+    for (let i = 0; i < sp.count; i++) { // jaw taper, cheek/brow shaping
+      let x = sp.getX(i), y = sp.getY(i), z = sp.getZ(i);
+      const low = Math.max(0, -y / 0.1);
+      x *= 1 - low * 0.28; z *= 1 - low * 0.12;
+      if (z < 0 && y > 0.01 && y < 0.04) z -= 0.006; // brow ridge
+      sp.setXYZ(i, x * 0.86, y * 1.18, z);
+    }
+    skullG.computeVertexNormals();
+    hm(skullG, skin, 0, 0.065, -0.005);
+    const nose = hm(new THREE.ConeGeometry(0.014, 0.04, 10), skin, 0, 0.06, -0.103); nose.rotation.x = -Math.PI / 2 - 0.35; nose.scale.set(1, 1, 0.8);
+    for (const sx of [-1, 1]) {
+      hm(new THREE.SphereGeometry(0.0115, 12, 10), eyeW, sx * 0.032, 0.085, -0.084).scale.set(1, 0.7, 0.6);
+      hm(new THREE.SphereGeometry(0.006, 10, 8), iris, sx * 0.032, 0.085, -0.091).scale.set(1, 1, 0.4);
+      const brow = hm(new THREE.BoxGeometry(0.03, 0.006, 0.01), hair, sx * 0.033, 0.104, -0.09); brow.rotation.z = sx * -0.12;
+      const ear = hm(new THREE.SphereGeometry(0.022, 10, 8), skin, sx * 0.084, 0.065, 0.0); ear.scale.set(0.35, 1, 0.75);
+    }
+    hm(new THREE.BoxGeometry(0.034, 0.006, 0.008), lip, 0, 0.022, -0.096);
+    const hairG = new THREE.SphereGeometry(0.107, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.58);
+    const hp = hairG.attributes.position;
+    for (let i = 0; i < hp.count; i++) { const z = hp.getZ(i), y = hp.getY(i); if (z < -0.06 && y < 0.06) hp.setY(i, y + 0.02); }
+    hairG.computeVertexNormals();
+    hm(hairG, hair, 0, 0.083, 0.008).scale.set(0.9, 1.08, 1.05);
+    hm(new THREE.SphereGeometry(0.09, 16, 10, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.3), hair, 0, 0.06, 0.02).scale.set(0.95, 1.1, 1.1); // back of the head
+    this.setHeadVisible(false);
 
     // arms
     this.arms = [];
@@ -114,8 +146,11 @@ export class Body {
   update(dt, s) {
     this.t += dt;
     const root = this.root;
-    if ((s.mode === 'seat' && s.seat?.lie) || s.swim) { root.visible = false; return; } // swimming: your hands do the work in view
+    if (s.third !== this.third) { this.third = s.third; this.setHeadVisible(!!s.third); }
+    if (s.swim && !s.third) { root.visible = false; return; } // first-person swimming: your hands do the work in view
     root.visible = true;
+    if (s.mode === 'seat' && s.seat?.lie) { this.lie(s.seat.getEye ? s.seat.getEye() : s.seat.eye, s.seat.yaw); return; }
+    root.rotation.order = 'XYZ';
     // body yaw follows the view, with a little give when standing still
     let dy = s.yaw - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     if (s.speed > 0.3 || Math.abs(dy) > 0.7 || s.mode !== 'walk') this.yaw += dy * Math.min(1, dt * (s.speed > 0.3 ? 10 : 5));
@@ -127,7 +162,7 @@ export class Body {
     this.crouchBlend += (s.crouch - this.crouchBlend) * Math.min(1, dt * 8);
 
     if (s.mode === 'seat') {
-      const eye = s.camera.position;
+      const eye = s.eye;
       const floorY = eye.y - 1.12;
       root.position.set(eye.x + sinY * 0.12, floorY, eye.z + cosY * 0.12);
       this.pelvis.position.y = 0.5; this.pelvis.rotation.x = 0;
@@ -195,4 +230,23 @@ export class Body {
   }
 
   armsVisible(v) { for (const A of this.arms) A.el.visible = v; }
+
+  setHeadVisible(v) {
+    for (const m of this.headMeshes) {
+      if (!m.userData.base) { m.userData.base = m.material; const g = m.material.clone(); g.colorWrite = false; g.depthWrite = false; m.userData.ghost = g; }
+      m.material = v ? m.userData.base : m.userData.ghost;
+    }
+  }
+
+  /** Lying on a bed, futon or in the tent: stretched out with the head where your eyes are. */
+  lie(eye, yaw) {
+    const f = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)); // toward the feet
+    const Y = f.clone().negate(), Z = new THREE.Vector3(0, -1, 0), X = new THREE.Vector3().crossVectors(Y, Z);
+    this.root.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
+    this.root.position.copy(eye).addScaledVector(f, 1.6).add(this.tmp.set(0, -0.16, 0));
+    this.pelvis.position.y = 0.92; this.pelvis.rotation.x = 0; this.spine.rotation.x = 0;
+    for (const L of this.legs) { L.hip.rotation.set(0.04, 0, L.side * 0.05); L.knee.rotation.x = -0.12; L.ankle.rotation.x = 0.4; }
+    for (const A of this.arms) { A.sh.rotation.set(0.1, 0, A.side * 0.12); A.el.rotation.x = 0.3; A.wr.rotation.x = 0; }
+    this.armsVisible(true);
+  }
 }

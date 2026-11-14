@@ -179,12 +179,12 @@ export function buildCabin(ctx) {
     const g = new THREE.Group(); g.position.set(hx, F, hz); g.rotation.y = base; root.add(g);
     const panel = new THREE.Group(); g.add(panel);
     const thick = 0.055;
-    const pg = boxGeo(width - 0.02, height - 0.02, thick, 1.2);
+    const pg = boxGeo(width - 0.1, height - 0.03, thick, 1.2);
     mesh(pg, matPanel, width / 2, height / 2, 0, panel);
     // battens & hardware
     for (const y of [0.35, height - 0.35]) mesh(boxGeo(width - 0.12, 0.12, 0.03, 1.2), matPanel, width / 2, y, 0.04, panel);
     mesh(boxGeo(width - 0.12, 0.12, 0.03, 1.2), matPanel, width / 2, y0(height), -0.04, panel);
-    for (const y of [0.35, height - 0.35]) { mesh(boxGeo(0.35, 0.04, 0.012), M.iron, 0.2, y, 0.06, panel); mesh(boxGeo(0.35, 0.04, 0.012), M.iron, 0.2, y, -0.06, panel); }
+    for (const y of [0.35, height - 0.35]) { mesh(boxGeo(0.35, 0.045, 0.01), M.iron, 0.23, y, 0.064, panel); mesh(boxGeo(0.35, 0.045, 0.01), M.iron, 0.23, y, -0.064, panel); }
     for (const s of [1, -1]) { const h = mesh(new THREE.TorusGeometry(0.045, 0.008, 6, 12, Math.PI), M.iron, width - 0.12, 1.0, s * 0.06, panel); h.rotation.z = Math.PI / 2; }
     const closedBox = col.addBox(0, 0, 0, 0, 0, 0, { walk: false });
     const hinge = new Hinged(g, 'y', sign * 1.75, ctx, { collider: closedBox, label, sound: 'door', speed: 3.6 });
@@ -412,13 +412,45 @@ export function buildCabin(ctx) {
   // kitchen counter
   {
     const z0 = -3.34, z1 = -2.74, x0 = -2.4, x1 = 0.9, h = 0.9;
-    addBox(x1 - x0, h - 0.06, z1 - z0 - 0.04, M.boards, (x0 + x1) / 2, F + (h - 0.06) / 2, (z0 + z1) / 2 - 0.02, 1.2);
+    // solid drawer sections either side, a real open cupboard under the sink
+    const ch = h - 0.06, cz = (z0 + z1) / 2 - 0.02, cd = z1 - z0 - 0.04;
+    addBox(-1.5 - x0, ch, cd, M.boards, (x0 - 1.5) / 2, F + ch / 2, cz, 1.2);
+    addBox(x1 + 0.1, ch, cd, M.boards, (x1 - 0.1) / 2, F + ch / 2, cz, 1.2);
+    const cabinet = new THREE.MeshStandardMaterial({ map: T.boards.map, color: 0x8a7a68, roughness: 0.85 });
+    addBox(1.4, 0.03, cd, cabinet, -0.8, F + 0.075, cz, 1.2);          // floor
+    addBox(1.4, 0.02, cd - 0.05, cabinet, -0.8, F + 0.43, cz - 0.02, 1.2); // shelf
+    addBox(1.4, ch, 0.02, cabinet, -0.8, F + ch / 2, z0 + 0.01, 1.2);    // back
+    addBox(0.02, ch, cd, cabinet, -1.49, F + ch / 2, cz, 1.2); addBox(0.02, ch, cd, cabinet, -0.11, F + ch / 2, cz, 1.2);
+    addBox(1.4, 0.06, 0.03, M.trim, -0.8, F + 0.04, z1 - 0.01, 1.2);    // kick plate
+    for (const [a, b] of [[x0, -1.5], [-0.1, x1]]) solid(a, F, z0, b, F + h, z1, { walk: false });
+    solid(-1.5, F, z0, -0.1, F + 0.09, z1, { walk: true });
+    solid(-1.5, F + 0.42, z0, -0.1, F + 0.44, z1 - 0.06, { walk: false });
+    solid(-1.5, F + 0.78, z0, -0.1, F + h, z1, { walk: false });
+    solid(-1.5, F, z0, -0.1, F + h, z0 + 0.03, { walk: false });
+    // what's inside: a pot, jars, a watering can, cleaning things
+    const pot = new THREE.Group();
+    mesh(new THREE.CylinderGeometry(0.11, 0.1, 0.13, 20, 1, true), M.steel, 0, 0.065, 0, pot).material = new THREE.MeshStandardMaterial({ color: 0x3a3a3c, metalness: 0.8, roughness: 0.4, side: THREE.DoubleSide });
+    mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.006, 20), M.iron, 0, 0.003, 0, pot);
+    mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 6), M.black, 0.18, 0.11, 0, pot).rotation.z = Math.PI / 2;
+    pot.position.set(-1.15, F + 0.09, -3.0); root.add(pot);
+    ix.item(pot, 'cooking pot', { mass: 1.2, sound: 'metal' });
+    const jarMat = new THREE.MeshPhysicalMaterial({ color: 0xd8e4dc, roughness: 0.08, transparent: true, opacity: 0.55 });
+    [[0xb8442a, -0.55], [0xe0b040, -0.42], [0x6a3a7a, -0.3]].forEach(([c, x]) => {
+      const j = new THREE.Group(); j.position.set(x, F + 0.44, -3.02); root.add(j);
+      mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.12, 14), jarMat, 0, 0.06, 0, j);
+      mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.08, 14), new THREE.MeshStandardMaterial({ color: c, roughness: 0.5 }), 0, 0.045, 0, j);
+      mesh(new THREE.CylinderGeometry(0.048, 0.048, 0.02, 14), M.brass, 0, 0.125, 0, j);
+      ix.item(j, 'jar of preserves', { mass: 0.5, shape: 'cylinder', sound: 'glass' });
+    });
+    const brush = new THREE.Group(); brush.position.set(-0.6, F + 0.09, -2.95); root.add(brush);
+    mesh(rbox(0.16, 0.03, 0.06, 0.01), M.oak, 0, 0.035, 0, brush); mesh(boxGeo(0.15, 0.025, 0.05), new THREE.MeshStandardMaterial({ color: 0xc8b070, roughness: 1 }), 0, 0.012, 0, brush);
+    ix.item(brush, 'scrubbing brush', { mass: 0.2, sound: 'wood' });
+    mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.35, 8), M.steel, -0.6, F + 0.6, -3.15, root); // drain pipe
     // countertop with a sink cut-out (four pieces)
     const top = (a, b, c2, d) => addBox(b - a, 0.06, d - c2, M.oak, (a + b) / 2, F + h - 0.03, (c2 + d) / 2, 1.2);
     top(x0, -0.95, z0, z1 + 0.03); top(-0.25, x1, z0, z1 + 0.03); top(-0.95, -0.25, z0, -3.24); top(-0.95, -0.25, -2.84, z1 + 0.03);
     addBox(0.68, 0.18, 0.38, M.steel, -0.6, F + h - 0.12, -3.04, 1);
     addBox(0.62, 0.01, 0.32, M.soot, -0.6, F + h - 0.2, -3.04, 1);
-    solid(x0, F, z0, x1, F + h, z1, { walk: false });
     // faucet
     const fg = new THREE.Group(); fg.position.set(-0.6, F + h, -3.27); root.add(fg);
     mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.25, 10), M.steel, 0, 0.125, 0, fg);
@@ -479,7 +511,7 @@ export function buildCabin(ctx) {
     for (const [x, yaw] of [[-0.85, -Math.PI / 2], [0.88, Math.PI / 2]]) {
       const c = chair(M, root, x, F, 2.35, yaw);
       solid(x - 0.22, F, 2.13, x + 0.22, F + 0.48, 2.57, { walk: false });
-      const seat = { eye: v3(x, F + 1.12, 2.35), yaw: yaw + Math.PI, exit: v3(x + (x < 0 ? -0.45 : -0.45), F, 2.35 - 0.0) };
+      const seat = { eye: v3(x - Math.sin(yaw) * -0.04, F + 1.12, 2.35), yaw, exit: v3(x + (x < 0 ? -0.45 : -0.45), F, 2.35 - 0.0) };
       seat.exit.set(x < 0 ? x - 0.1 : x - 0.15, F, 1.6);
       ix.register(c, { label: 'Sit down', use: () => ctx.player.sit(seat) });
     }
@@ -541,18 +573,33 @@ export function buildCabin(ctx) {
     audio?.clock(cl.getWorldPosition(v3()));
     updaters.push(() => { const h = ctx.clock.hour; hourH.rotation.z = -((h % 12) / 12) * Math.PI * 2; minH.rotation.z = -((h % 1)) * Math.PI * 2; });
     ix.register(cl, { label: () => { const h = ctx.clock.hour; const hh = Math.floor(h), mm = Math.floor((h % 1) * 60); return `It's ${((hh + 11) % 12) + 1}:${String(mm).padStart(2, '0')} ${hh < 12 ? 'am' : 'pm'}`; }, use: () => {} });
-    // guitar on a stand
-    const gg = new THREE.Group(); gg.position.set(1.15, F, 0.55); gg.rotation.y = -Math.PI / 2; root.add(gg);
+    // guitar resting on a little stand — pick it up and play
+    const st = new THREE.Group(); st.position.set(1.15, F, 0.55); root.add(st);
+    for (const sx of [-0.12, 0.12]) { const leg = mesh(boxGeo(0.03, 0.42, 0.03), M.darkWood, 0, 0.2, sx, st); leg.rotation.x = sx * 1.5; }
+    mesh(boxGeo(0.18, 0.03, 0.3), M.darkWood, 0.05, 0.12, 0, st);
+    const gg = new THREE.Group();
     const gBody = new THREE.Shape(); gBody.absellipse(0, 0, 0.2, 0.24, 0, Math.PI * 2);
     const bodyM = new THREE.MeshStandardMaterial({ color: 0xd09a60, roughness: 0.3, map: T.grain.map });
-    const b1 = mesh(new THREE.ExtrudeGeometry(gBody, { depth: 0.09, bevelEnabled: true, bevelSize: 0.01, bevelThickness: 0.01 }), bodyM, 0, 0.38, 0, gg);
-    const b2 = mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.09, 24), bodyM, 0, 0.6, 0.045, gg); b2.rotation.x = Math.PI / 2;
-    mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.002, 20), M.black, 0, 0.55, 0.1, gg).rotation.x = Math.PI / 2;
-    mesh(boxGeo(0.05, 0.55, 0.03), M.darkWood, 0, 0.98, 0.07, gg);
-    mesh(boxGeo(0.07, 0.15, 0.03), M.darkWood, 0, 1.31, 0.06, gg);
-    gg.rotation.z = 0.0; gg.children.forEach((c) => (c.rotation.x += 0.0)); gg.rotation.x = -0.18;
-    ix.register(gg, { label: 'Strum the guitar', use: () => audio?.strum(gg.getWorldPosition(v3()).add(v3(0, 0.5, 0))) });
-    solid(1.0, F, 0.35, 1.4, F + 1.3, 0.75, { walk: false });
+    mesh(new THREE.ExtrudeGeometry(gBody, { depth: 0.09, bevelEnabled: true, bevelSize: 0.01, bevelThickness: 0.01 }), bodyM, 0, 0.0, -0.045, gg);
+    const b2 = mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.09, 24), bodyM, 0, 0.22, 0.0, gg); b2.rotation.x = Math.PI / 2;
+    mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.002, 20), M.black, 0, 0.17, 0.056, gg).rotation.x = Math.PI / 2;
+    mesh(boxGeo(0.05, 0.55, 0.03), M.darkWood, 0, 0.6, 0.02, gg);
+    mesh(boxGeo(0.07, 0.15, 0.03), M.darkWood, 0, 0.93, 0.01, gg);
+    for (let i = 0; i < 6; i++) mesh(boxGeo(0.0015, 0.75, 0.0015), M.steel, -0.013 + i * 0.0052, 0.5, 0.04, gg, { cast: false });
+    gg.position.set(1.17, F + 0.36, 0.55); gg.rotation.set(0, -Math.PI / 2, -0.22); root.add(gg);
+    const guitar = ix.item(gg, 'guitar', { mass: 2.4, sound: 'wood' });
+    guitar.instrument = true;
+    guitar.play = () => audio?.strum(gg.getWorldPosition(v3()));
+    // held across the body like you're about to play
+    {
+      // camera-space playing pose: neck out to the left and slightly up, the face turned toward you
+      const Y = v3(-0.86, 0.32, -0.38).normalize(), face = v3(0.05, 0.55, 0.83);
+      const Z = face.sub(Y.clone().multiplyScalar(face.dot(Y))).normalize(), X = v3().crossVectors(Y, Z);
+      const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
+      const bodyCentre = v3(0.12, -0.36, -0.52);
+      guitar.holdPose = { offset: bodyCentre.addScaledVector(Y, -0.18), euler: new THREE.Euler().setFromQuaternion(q) };
+    }
+    solid(1.0, F, 0.38, 1.3, F + 0.14, 0.72, { walk: true });
   }
   // painting
   const paintingTex = (() => {
@@ -600,7 +647,8 @@ export function buildCabin(ctx) {
     mesh(boxGeo(0.4, 0.1, 0.4), M.oak, 0, -0.01, 0.02, dg);
     // pocket watch + letter inside
     mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.008, 16), M.brass, -0.08, 0.05, 0.05, dg, { cast: false });
-    mesh(boxGeo(0.14, 0.003, 0.1), M.paper, 0.06, 0.042, 0.0, dg, { cast: false }).rotation.y = 0.3;
+    const letter = mesh(boxGeo(0.14, 0.003, 0.1), M.paper, 0.06, 0.042, 0.0, dg, { cast: false }); letter.rotation.y = 0.3;
+    ix.register(letter, { label: 'Read the old letter', use: () => ctx.ui.paper('A letter, folded many times', `<p>If you're reading this, you found the cabin. Good.</p><p>The fire draws best with the window cracked open. The radio only gets two stations and that's plenty. Deer come to the meadow at dawn if you're quiet — crouch, and let them come to you.</p><p>There's tea in the jars under the sink, and the dock is the best place in the world to watch the rain.</p><p>Stay as long as you like. Leave the place a little better than you found it.</p><p style="text-align:right">— M.</p>`) });
     const ndr = new Drawer(dg, v3(0, 0, 1), 0.28, ctx);
     ix.register(dg, { label: () => (ndr.open ? 'Close drawer' : 'Open drawer'), use: () => ndr.toggle() });
     updaters.push((dt) => ndr.update(dt));
@@ -662,13 +710,13 @@ export function buildCabin(ctx) {
     mesh(rbox(1.3, 0.04, 0.48, 0.01), M.oak, 0, 0.75, 0, g);
     for (const [x, z] of [[-0.6, -0.2], [0.6, -0.2], [-0.6, 0.2], [0.6, 0.2]]) mesh(boxGeo(0.045, 0.73, 0.045), M.oak, x, 0.365, z, g);
     solid(2.95, F, 2.86, 4.25, F + 0.77, 3.34, { walk: false });
-    const c = chair(M, root, 3.6, F, 2.45, 0);
+    const c = chair(M, root, 3.6, F, 2.45, Math.PI);
     const seat = { eye: v3(3.6, F + 1.12, 2.5), yaw: Math.PI, exit: v3(3.0, F, 1.9) };
     ix.register(c, { label: 'Sit at the desk', use: () => ctx.player.sit(seat) });
     solid(3.38, F, 2.24, 3.82, F + 0.48, 2.66, { walk: false });
     const nb = makeBook(new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.8 }), 0.16, 0.22, 0.02);
     nb.position.set(3.45, F + 0.78, 3.08); nb.rotation.set(-Math.PI / 2, 0, 0.1); root.add(nb);
-    ix.item(nb, 'notebook', { mass: 0.3, sound: 'soft' });
+    ix.register(nb, { label: 'Write in your journal', use: () => ctx.ui.journal() });
     const pen = mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.14, 6), M.black, 3.7, F + 0.775, 3.05, root); pen.rotation.set(Math.PI / 2, 0, 0.6);
     ix.item(pen, 'pen', { mass: 0.05, sound: 'wood' });
     const plant = new THREE.Group(); plant.position.set(4.05, F + 0.77, 3.15); root.add(plant);

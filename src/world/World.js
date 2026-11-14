@@ -26,7 +26,9 @@ import { Radio } from './systems/radio.js';
 import { UI } from './systems/ui.js';
 import { Hands } from './systems/hands.js';
 import { Body } from './systems/body.js';
+import { LofiPlayer } from './systems/music.js';
 import { Splashes } from './systems/splashes.js';
+import * as CANNON from 'cannon-es';
 import { glassRain, glassTime } from './build/kit.js';
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -115,6 +117,8 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     wildlife?.ring(p.x, p.z, 0.8, 0.5);
   };
   let wildlife = null;
+  player.onScope = (on) => ui.setScope(on);
+  weather.splashFx = (x, y, z) => { for (let k = 0; k < 2; k++) { const a = Math.random() * 6.28; splashes.spawn(x, y + 0.02, z, Math.cos(a) * 0.5, 0.8 + Math.random() * 0.9, Math.sin(a) * 0.5, 0.007 + Math.random() * 0.006, 0.4, 0, y); } };
   ix.hands = hands;
   if (input.touch) ix.coneAngle = 0.16;
   const clock = { hour: settings.startHour };
@@ -127,6 +131,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
   progress(0.72, 'Raising the cabin'); await nextFrame();
   const cabin = buildCabin(ctx);
   progress(0.8, 'Building the dock and tree house'); await nextFrame();
+  player.occluders = ix.occluders;
   buildOutdoor(ctx);
   ctx.splashes = splashes;
   wildlife = new Wildlife(ctx);
@@ -161,7 +166,41 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     paused = p; ui.showMenu(p);
     if (audio) { if (p) audio.master.gain.setTargetAtTime(settings.volume * 0.35, audio.now, 0.2); else audio.setVolume(settings.volume); }
   };
+  let overlay = false;
+  // ------------------------------------------------------- pocket player
+  const $ = (id) => document.getElementById(id);
+  const lofi = audio ? new LofiPlayer(audio) : null;
+  const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  const plRefresh = () => {
+    if (!lofi) return;
+    $('pl-title').textContent = lofi.title; $('pl-state').textContent = lofi.playing ? 'Now playing' : 'Paused';
+    $('pl-num').textContent = `${lofi.track + 1} / 8`; $('pl-nature').classList.toggle('on', lofi.nature);
+    $('pl-dur').textContent = fmt(lofi.duration);
+  };
+  let musicOpen = false;
+  const setMusic = (on) => {
+    musicOpen = on; $('player').classList.toggle('open', on);
+    if (on && lofi && !lofi.r) { lofi.load(0); }
+    plRefresh();
+    overlay = on; if (on) input.exitLock(); else if (!input.touch && !paused) input.requestLock();
+  };
+  if (lofi) {
+    $('pl-play').onclick = () => { lofi.toggle(); plRefresh(); };
+    $('pl-next').onclick = () => { lofi.nextTrack(); if (!lofi.playing) lofi.play(lofi.track); plRefresh(); };
+    $('pl-prev').onclick = () => { lofi.prevTrack(); if (!lofi.playing) lofi.play(lofi.track); plRefresh(); };
+    $('pl-nature').onclick = () => { lofi.setNature(!lofi.nature); plRefresh(); };
+    $('pl-vol').oninput = (e) => lofi.setVolume(Number(e.target.value));
+    addEventListener('keydown', (e) => {
+      if (!musicOpen) return;
+      if (e.code === 'Space') { e.preventDefault(); lofi.toggle(); plRefresh(); }
+      if (e.code === 'ArrowRight') { lofi.nextTrack(); plRefresh(); }
+      if (e.code === 'ArrowLeft') { lofi.prevTrack(); plRefresh(); }
+    });
+    setInterval(() => { if (lofi.playing) { $('pl-time').textContent = fmt(lofi.pos); $('pl-prog').style.width = Math.min(100, lofi.pos / lofi.duration * 100) + '%'; plRefresh(); } }, 500);
+  }
   Object.assign(ui.h, {
+    hour: () => clock.hour,
+    overlay: (on) => { overlay = on; input.enabled = !on; if (on) { input.keys.clear(); input.exitLock(); } else if (!input.touch) input.requestLock(); },
     resume: () => { setPaused(false); if (!input.touch) input.requestLock(); },
     exit: () => { running = false; input.exitLock(); onExit?.(); },
     quality: (q) => { settings.quality = q; saveSettings(settings); try { sessionStorage.setItem('se-autoenter', '1'); } catch (e) {} location.reload(); },
@@ -185,7 +224,8 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
       await ui.fade(false, 700);
     },
   });
-  input.onUnlock = () => { if (running && !input.touch) setPaused(true); };
+  input.onUnlock = () => { if (running && !input.touch && !overlay) setPaused(true); };
+  addEventListener('keydown', (e) => { if (e.code === 'KeyM' && musicOpen) setMusic(false); });
   input.onTouchMode = () => { ui.setTouch(true); ix.coneAngle = 0.16; };
 
   addEventListener('resize', () => {
@@ -225,12 +265,16 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     input.look.x = input.look.x; // (accumulated by events)
     player.update(dt);
     if (input.hit('KeyF')) player.toggleFlashlight();
+    if (input.hit('KeyM')) setMusic(!musicOpen);
     if (input.hit('Escape') && input.touch) { input.endFrame(); setPaused(true); return; }
     ix.update(dt);
-    hands.update(dt, { held: ix.held, inspecting: ix.held && (input.down('KeyR') || input.mouse.right), hover: !!ix.focus && !player.swimming, mode: player.mode, bob: player.bob, swim: player.swimming, swimPhase: player.swimPhase });
-    body.update(dt, { pos: player.pos, yaw: player.yaw, pitch: player.pitch, mode: player.mode, seat: player.seat, camera, speed: player.speedH, running: player.speedH > 3,
+    const third = player.view === 'third' && player.mode !== 'scope';
+    hands.R.root.parent.visible = true;
+    hands.update(dt, { held: ix.held, inspecting: ix.held && (input.down('KeyR') || input.mouse.right), hover: !!ix.focus && !player.swimming, mode: player.mode, bob: player.bob, swim: player.swimming, swimPhase: player.swimPhase, music: musicOpen && !player.swimming, musicOn: lofi?.playing });
+    if (third) { hands.R.root.visible = false; hands.L.root.visible = false; }
+    body.update(dt, { pos: player.pos, yaw: player.yaw, pitch: player.pitch, mode: player.mode, seat: player.seat, camera, eye: player.eyePos, speed: player.speedH, running: player.speedH > 3,
       crouch: Math.max(0, Math.min(1, (1.72 - player.height) / 0.6)), onGround: player.onGround, travel: player.travel, stepLen: player.stepLen,
-      swim: player.swimming, swimPhase: player.swimPhase, waterY: WATER_LEVEL, climbing: player.climbing, handsActive: hands.R.root.visible });
+      swim: player.swimming, swimPhase: player.swimPhase, waterY: WATER_LEVEL - player.dive, climbing: player.climbing, handsActive: hands.R.root.visible, third });
     physics.step(dt);
     for (const it of physics.items) {
       if (it.held) continue;
@@ -245,6 +289,12 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
         } else { audio?.splash(it.mesh.position, Math.min(1, 0.3 + it.body.mass * 0.4)); it.body.linearDamping = 0.9; it.body.angularDamping = 0.9; }
       }
       if (!inLake && y > WATER_LEVEL + 0.1) { it.body.linearDamping = 0.05; it.body.angularDamping = 0.15; }
+      // light things float and bob; stones and metal sink
+      if (inLake && (it.sound === 'wood' || it.sound === 'soft')) {
+        const sub = Math.min(1, (WATER_LEVEL + 0.02 - y) / 0.12);
+        it.body.applyForce(new CANNON.Vec3(Math.sin(elapsed * 0.3) * 0.02, it.body.mass * 9.82 * (1 + sub * 1.4), Math.cos(elapsed * 0.27) * 0.02), it.body.position);
+        it.body.wakeUp(); it.body.linearDamping = 0.6;
+      }
       it.wasAbove = !inLake;
     }
     for (const u of updaters) u(dt, elapsed);
@@ -283,6 +333,17 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
     if (night > 0.3) { sky.hemi.color.lerp(nightFill, 0.85 * night); }
     sky.hemi.intensity *= indoor ? 0.55 - night * 0.3 : 1;
     for (const m of M.interior) m.envMapIntensity = indoor ? 0.25 : 0.6;
+    sky.uniforms.uPix.value = (camera.fov * Math.PI / 180) / innerHeight;
+    // under the surface: murky green-blue, light from above, muffled world, rising bubbles
+    const under = camera.position.y < WATER_LEVEL - 0.03 && lakeE(camera.position.x, camera.position.z) < 1.2;
+    if (under) {
+      const day = sky.state.daylight;
+      weather.fog.color.setRGB(0.04 + day * 0.07, 0.11 + day * 0.18, 0.12 + day * 0.16);
+      weather.fog.density = 0.16;
+      if (Math.random() < dt * 3) splashes.bubbles(camera.position.clone().add(new THREE.Vector3(0, -0.2, -0.3).applyQuaternion(camera.quaternion)), 3);
+    }
+    lake.mesh.material.uniforms.uUnder.value = under ? 1 : 0;
+    if (audio) audio.setUnderwater(under);
 
     if (audio) {
       const dx = camera.position.x - LAKE.x, dz = camera.position.z - LAKE.z, a = Math.atan2(dz / LAKE.rz, dx / LAKE.rx);
@@ -290,7 +351,7 @@ export async function startWorld({ container, settings, audio, onProgress, onExi
       audio.tickListener(camera);
       audio.updateAmbience(dt, {
         rain: weather.w.rain, wind: weather.w.gust, night, daylight: sky.state.daylight,
-        indoor: indoor ? 1 : 0, openness: cabin.openness(), shorePos: shore, trees: nearTree,
+        indoor: indoor ? 1 : 0, openness: cabin.openness(), shorePos: shore, trees: nearTree, listenerPos: camera.position,
         forest: indoor ? 0.2 : 1,
       });
     }

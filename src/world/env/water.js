@@ -25,7 +25,7 @@ uniform sampler2D tDiffuse; uniform vec3 color; uniform float uMirror;
 uniform sampler2D uNormal; uniform sampler2D uDepth; uniform vec4 uDepthRect;
 uniform float uTime; uniform float uRain; uniform float uWind; uniform float uDay;
 uniform vec3 uSunDir; uniform vec3 uSunCol; uniform vec3 uZenith; uniform vec3 uHorizon;
-uniform vec3 uShallow; uniform vec3 uDeep;
+uniform vec3 uShallow; uniform vec3 uDeep; uniform float uUnder;
 varying vec4 vMirror; varying vec3 vWorld;
 #include <common>
 #include <fog_pars_fragment>
@@ -59,6 +59,18 @@ void main(){
   nxy += rainRings(p, uTime, uRain) * 0.55 * min(1.0, uRain * 2.0);
   vec3 N = normalize(vec3(nxy.x, 1.0, nxy.y));
   vec3 V = normalize(cameraPosition - vWorld);
+  if (!gl_FrontFacing) {
+    // seen from below: a bright window to the sky overhead, darkening to total internal reflection
+    float up = clamp(-V.y, 0.0, 1.0);
+    float win = smoothstep(0.62, 0.8, up + nxy.x * 0.2);
+    vec3 skyc = mix(uHorizon, uZenith, 0.5) * (0.6 + uDay * 0.8) + uSunCol * pow(max(dot(-V, uSunDir), 0.0), 40.0) * 2.0;
+    vec3 deepc = uShallow * (0.15 + uDay * 0.5);
+    gl_FragColor = vec4(mix(deepc, skyc, win), 0.96);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+    #include <fog_fragment>
+    return;
+  }
   float ndv = max(dot(N, V), 0.0);
   float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
   vec3 R = reflect(-V, N);
@@ -105,7 +117,7 @@ export class Lake {
       uMirror: { value: 0 }, uNormal: { value: null }, uDepth: { value: null }, uDepthRect: { value: new THREE.Vector4(x0, z0, W, D) },
       uTime: { value: 0 }, uRain: { value: 0 }, uWind: { value: 0.3 }, uDay: { value: 1 },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color() }, uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() },
-      uShallow: { value: new THREE.Color(0.16, 0.26, 0.22) }, uDeep: { value: new THREE.Color(0.02, 0.06, 0.07) },
+      uShallow: { value: new THREE.Color(0.16, 0.26, 0.22) }, uDeep: { value: new THREE.Color(0.02, 0.06, 0.07) }, uUnder: { value: 0 },
     }]);
     this.reflective = quality.waterReflections > 0;
     const shader = { uniforms, vertexShader: vert, fragmentShader: frag };
@@ -117,7 +129,7 @@ export class Lake {
       this.mesh = new THREE.Mesh(geo, m);
     }
     const mat = this.mesh.material;
-    mat.transparent = true; mat.fog = true; mat.depthWrite = true;
+    mat.transparent = true; mat.fog = true; mat.depthWrite = true; mat.side = THREE.DoubleSide;
     mat.uniforms.uNormal.value = normals; mat.uniforms.uDepth.value = depthTex;
     this.u = mat.uniforms;
     this.mesh.rotation.x = -Math.PI / 2;
